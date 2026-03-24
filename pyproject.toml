@@ -1,0 +1,12 @@
+[project]
+name = "sparkflow"
+version = "0.1.0"
+description = "一次系统图自动审图（MVP）"
+requires-python = ">=3.10"
+dependencies = ["ezdxf>=1.4.3", "python-docx>=1.1.0"]
+
+[project.scripts]
+sparkflow = "sparkflow.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

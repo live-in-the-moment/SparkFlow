@@ -1,0 +1,13 @@
+﻿{
+  "wire_filter": {
+    "exclude_layers": ["DIM", "标注", "文字", "图框", "标题", "尺寸"],
+    "min_length": 3.0,
+    "exclude_closed_polylines": true,
+    "exclude_internal_device_wires": true,
+    "device_radius_padding": 4.0,
+    "exclude_text_dense_wires": true,
+    "text_density_radius": 18.0,
+    "text_density_threshold": 5,
+    "text_dense_max_length": 80.0
+  }
+}

@@ -1,0 +1,49 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Python cache / build
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / type-check / tooling cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.nox/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Logs and local runtime files
+*.log
+*.tmp
+*.temp
+
+# Local AI/tool state
+.codex_new/
+.trae/
+
+# Project-generated outputs
+out/
+out_*/
+tmp_parse_compare/
+
+# Large local input datasets (do not upload by default)
+image/

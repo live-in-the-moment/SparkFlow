@@ -1,0 +1,174 @@
+﻿{
+  "device_templates": [
+    {
+      "device_type": "breaker",
+      "block_name": "BKR*",
+      "match_mode": "glob",
+      "text_keywords": ["断路器", "隔离开关", "熔断器式隔离开关", "负荷开关", "自动空气开关", "复合开关"],
+      "label_globs": ["*QF*", "*QS*"],
+      "terminals": [
+        {"name": "line_in", "x": -10.0, "y": 0.0},
+        {"name": "line_out", "x": 10.0, "y": 0.0}
+      ],
+      "footprint_radius": 18.0,
+      "min_terminals": 2,
+      "max_terminals": 2,
+      "text_group_radius": 8.0,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "breaker",
+      "block_name": "BREAKER*",
+      "match_mode": "glob",
+      "terminals": [
+        {"name": "line_in", "x": -10.0, "y": 0.0},
+        {"name": "line_out", "x": 10.0, "y": 0.0}
+      ],
+      "footprint_radius": 18.0,
+      "min_terminals": 2,
+      "max_terminals": 2,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "breaker",
+      "block_name": "A$C22066BF2",
+      "match_mode": "equals",
+      "label_globs": ["*QF*", "*QS*"],
+      "footprint_radius": 18.0,
+      "min_terminals": 2,
+      "max_terminals": 2,
+      "text_group_radius": 6.0,
+      "terminal_layout": "vertical"
+    },
+    {
+      "device_type": "transformer",
+      "block_name": "TR*",
+      "match_mode": "glob",
+      "text_keywords": ["变压器", "主变", "电流互感器"],
+      "label_globs": ["TA*"],
+      "terminals": [
+        {"name": "hv", "x": -12.0, "y": 0.0},
+        {"name": "lv", "x": 12.0, "y": 0.0}
+      ],
+      "footprint_radius": 24.0,
+      "min_terminals": 2,
+      "max_terminals": 2,
+      "text_group_radius": 10.0,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "transformer",
+      "block_name": "TRANS*",
+      "match_mode": "glob",
+      "terminals": [
+        {"name": "hv", "x": -12.0, "y": 0.0},
+        {"name": "lv", "x": 12.0, "y": 0.0}
+      ],
+      "footprint_radius": 24.0,
+      "min_terminals": 2,
+      "max_terminals": 2,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "transformer",
+      "block_name": "A$C3A3E583B",
+      "match_mode": "equals",
+      "label_globs": ["TA*"],
+      "footprint_radius": 16.0,
+      "min_terminals": 2,
+      "max_terminals": 2,
+      "text_group_radius": 6.0,
+      "terminal_layout": "vertical"
+    },
+    {
+      "device_type": "switchgear_unit",
+      "block_name": "DK*",
+      "match_mode": "glob",
+      "text_keywords": ["开关柜"],
+      "terminals": [
+        {"name": "left", "x": -12.0, "y": 0.0},
+        {"name": "right", "x": 12.0, "y": 0.0}
+      ],
+      "footprint_radius": 26.0,
+      "min_terminals": 2,
+      "max_terminals": 4,
+      "text_group_radius": 12.0,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "switchgear_unit",
+      "block_name": "DP*",
+      "match_mode": "glob",
+      "text_keywords": ["配电箱", "综合配电箱", "低压柜"],
+      "terminals": [
+        {"name": "left", "x": -12.0, "y": 0.0},
+        {"name": "right", "x": 12.0, "y": 0.0}
+      ],
+      "footprint_radius": 26.0,
+      "min_terminals": 2,
+      "max_terminals": 4,
+      "text_group_radius": 12.0,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "switchgear_unit",
+      "text_keywords": ["进线单元", "出线单元", "计量单元", "无功补偿单元", "进线总柜", "联络柜", "出线柜", "电容器柜"],
+      "terminals": [
+        {"name": "line_in", "x": -12.0, "y": 0.0},
+        {"name": "line_out", "x": 12.0, "y": 0.0}
+      ],
+      "footprint_radius": 24.0,
+      "min_terminals": 2,
+      "max_terminals": 4,
+      "text_group_radius": 12.0,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "cable_branch_box",
+      "block_name": "DF*",
+      "match_mode": "glob",
+      "text_keywords": ["电缆分支箱", "分支箱"],
+      "terminals": [
+        {"name": "feed", "x": -14.0, "y": 0.0},
+        {"name": "branch_a", "x": 14.0, "y": 8.0},
+        {"name": "branch_b", "x": 14.0, "y": -8.0}
+      ],
+      "footprint_radius": 28.0,
+      "min_terminals": 2,
+      "max_terminals": 4,
+      "text_group_radius": 12.0
+    },
+    {
+      "device_type": "busbar",
+      "text_keywords": ["母线"],
+      "footprint_radius": 36.0,
+      "min_terminals": 2,
+      "max_terminals": 8,
+      "text_group_radius": 12.0,
+      "terminal_layout": "horizontal"
+    },
+    {
+      "device_type": "feeder",
+      "text_keywords": ["进线侧", "出线侧", "进线", "出线", "馈线"],
+      "terminals": [
+        {"name": "line", "x": 0.0, "y": 0.0}
+      ],
+      "footprint_radius": 18.0,
+      "min_terminals": 1,
+      "max_terminals": 1,
+      "text_group_radius": 8.0
+    },
+    {
+      "device_type": "load",
+      "text_keywords": ["所用电", "负荷", "用户", "SPD", "浪涌保护器", "避雷器", "电容器", "电能表", "集中器", "配电智能终端", "低压避雷器", "回路状态", "巡检仪", "智能电容补偿", "无功补偿控制器"],
+      "label_globs": ["SPD*", "BK*", "C*", "FB*"],
+      "terminals": [
+        {"name": "load", "x": 0.0, "y": 0.0}
+      ],
+      "footprint_radius": 18.0,
+      "min_terminals": 1,
+      "max_terminals": 1,
+      "text_group_radius": 8.0
+    }
+  ]
+}

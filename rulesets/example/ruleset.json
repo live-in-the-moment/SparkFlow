@@ -1,0 +1,20 @@
+﻿{
+  "version": "example_ruleset_v2",
+  "enabled_rules": [
+    "wire.floating_endpoints",
+    "device.missing_label",
+    "device.duplicate_label",
+    "electrical.component_missing_terminals",
+    "electrical.component_unconnected",
+    "electrical.switch_same_net",
+    "electrical.relation_unresolved"
+  ],
+  "params": {
+    "wire.floating_endpoints": {
+      "tol": 0.001
+    },
+    "device.missing_label": {
+      "radius": 10.0
+    }
+  }
+}
