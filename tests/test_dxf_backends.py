@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import ezdxf
+
 from sparkflow.cad.errors import CadParseError
 from sparkflow.cad.parse import CadParseOptions, parse_cad
 from sparkflow.model.builder import build_system_model
@@ -32,19 +34,23 @@ class DxfBackendTests(unittest.TestCase):
             self.assertEqual(parsed_auto.meta.get("chosen_dxf_backend"), "ascii")
 
     def test_binary_dxf_requires_ezdxf_or_auto(self) -> None:
-        dxf = Path("image") / "111" / "电缆CAD图纸" / "国网低压典设第25章B模块2017-12-11.dxf"
-        self.assertTrue(dxf.exists())
+        with tempfile.TemporaryDirectory() as td:
+            dxf = Path(td) / "binary.dxf"
+            doc = ezdxf.new(setup=True)
+            msp = doc.modelspace()
+            msp.add_line((0, 0), (10, 0))
+            doc.saveas(dxf, fmt="bin")
 
-        with self.assertRaises(CadParseError):
-            parse_cad(dxf, options=CadParseOptions(dxf_backend="ascii"))
+            with self.assertRaises(CadParseError):
+                parse_cad(dxf, options=CadParseOptions(dxf_backend="ascii"))
 
-        parsed_ezdxf = parse_cad(dxf, options=CadParseOptions(dxf_backend="ezdxf"))
-        parsed_auto = parse_cad(dxf, options=CadParseOptions(dxf_backend="auto"))
-        self.assertGreater(len(parsed_ezdxf.entities), 0)
-        self.assertGreater(len(parsed_auto.entities), 0)
-        build_system_model(parsed_ezdxf.entities)
-        build_system_model(parsed_auto.entities)
-        self.assertEqual(parsed_auto.meta.get("chosen_dxf_backend"), "ezdxf")
+            parsed_ezdxf = parse_cad(dxf, options=CadParseOptions(dxf_backend="ezdxf"))
+            parsed_auto = parse_cad(dxf, options=CadParseOptions(dxf_backend="auto"))
+            self.assertGreater(len(parsed_ezdxf.entities), 0)
+            self.assertGreater(len(parsed_auto.entities), 0)
+            build_system_model(parsed_ezdxf.entities)
+            build_system_model(parsed_auto.entities)
+            self.assertEqual(parsed_auto.meta.get("chosen_dxf_backend"), "ezdxf")
 
     def test_auto_fallback_records_reason_when_quality_is_bad(self) -> None:
         with tempfile.TemporaryDirectory() as td:
