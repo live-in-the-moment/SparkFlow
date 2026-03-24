@@ -25,13 +25,13 @@ DWG/DXF 图纸解析
 当前审图能力（默认最高级：拓扑 + 规则）：
 - 解析：实体类型/图层统计、bbox、关键坐标（LINE端点、TEXT/INSERT插入点等）
 - 建模：Device（label/device_type/terminals/source_entity_ids）
-- 拓扑：候选导线（LINE + LWPOLYLINE/POLYLINE 拆段）→ 端点吸附聚类 → nets（连通分量）→ 输出 topology.json
-- 规则：基础规则 + 拓扑级规则（以 topology.json 所对应的拓扑为输入）
+- 拓扑：候选导线（LINE + LWPOLYLINE/POLYLINE 拆段）→ 端点吸附聚类 → nets（连通分量）→ 输出 connectivity.json
+- 规则：基础规则 + 拓扑级规则（以 connectivity.json 所对应的拓扑为输入）
 
 当前审图能力分级（Level 1/2/3）：
 - Level 1（图元抽取）：实体类型/图层统计、bbox、关键坐标（LINE端点、TEXT插入点、INSERT插入点）
 - Level 2（设备对象）：从 INSERT + 附近文本构建 Device（label/device_type/terminals/source_entity_ids）
-- Level 3（拓扑关系）：候选导线（LINE + LWPOLYLINE 拆段）→ 端点吸附聚类 → 连通分量（nets）→ 输出 topology.json，并运行拓扑级规则
+- Level 3（拓扑关系）：候选导线（LINE + LWPOLYLINE/POLYLINE 拆段）→ 端点吸附聚类 → 连通分量（nets）→ 输出 connectivity.json，并运行拓扑级规则
 
 
 ⚠️ 语义边界（重要）：
@@ -63,7 +63,8 @@ DWG/DXF 图纸解析
     - `out_level3\\<run_id>\\report.md`（最终报告文档）
     - `out_level3\\<run_id>\\report.json`（结构化报告）
     - `out_level3\\<run_id>\\report.docx`（Word 报告）
-    - `out_level3\\<run_id>\\topology.json`（拓扑产物：nodes/edges/nets）
+    - `out_level3\\<run_id>\\connectivity.json`（连通图产物：nodes/edges/junctions/terminal_anchors）
+    - `out_level3\\<run_id>\\electrical.json`（电气图产物：components/terminals/nets/relations）
 
 三、DWG→DXF 转换器配置
 
