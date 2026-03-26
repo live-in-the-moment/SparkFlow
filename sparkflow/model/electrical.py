@@ -17,7 +17,7 @@ def build_electrical_graph(model: SystemModel) -> SystemModel:
     if connectivity is None:
         return model
 
-    unresolved = list(model.unresolved)
+    unresolved = list(_filter_resolved_terminal_anchor_items(model.unresolved, model.devices))
     terminals: list[ElectricalTerminal] = []
     terminal_index: dict[str, ElectricalTerminal] = {}
     components: list[ElectricalComponent] = []
@@ -143,3 +143,28 @@ def _relation_pairs(component_type: str, terminals: list[ElectricalTerminal]) ->
         return [(terminals[0], terminals[1])]
     head = terminals[0]
     return [(head, terminal) for terminal in terminals[1:]]
+
+
+def _filter_resolved_terminal_anchor_items(
+    unresolved_items: tuple[UnresolvedItem, ...],
+    devices,
+) -> tuple[UnresolvedItem, ...]:
+    out: list[UnresolvedItem] = []
+    for item in unresolved_items:
+        if item.kind != 'terminal_anchor':
+            out.append(item)
+            continue
+        device_type = str(item.extra.get('device_type', '')) if isinstance(item.extra, dict) else ''
+        source_ids = set(item.source_entity_ids)
+        resolved = False
+        for device in devices:
+            if not device.terminals:
+                continue
+            if device_type and (device.device_type or '') != device_type:
+                continue
+            if source_ids and source_ids.issubset(set(device.source_entity_ids)):
+                resolved = True
+                break
+        if not resolved:
+            out.append(item)
+    return tuple(out)

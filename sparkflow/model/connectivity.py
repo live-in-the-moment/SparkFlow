@@ -65,6 +65,20 @@ def build_connectivity(model: SystemModel, *, options: ConnectivityBuildOptions 
         if terminal_id:
             terminal_anchors[terminal_id] = point_to_node[idx]
 
+    used_nodes = set(terminal_anchors.values())
+    for edge in edges:
+        used_nodes.add(edge.a)
+        used_nodes.add(edge.b)
+    if len(used_nodes) < len(node_points):
+        ordered_nodes = sorted(used_nodes)
+        remap = {old: new for new, old in enumerate(ordered_nodes)}
+        node_points = tuple(node_points[old] for old in ordered_nodes)
+        edges = [
+            ConnectivityEdge(a=remap[edge.a], b=remap[edge.b], source_entity_ids=edge.source_entity_ids)
+            for edge in edges
+        ]
+        terminal_anchors = {terminal_id: remap[node_id] for terminal_id, node_id in terminal_anchors.items()}
+
     degree = _node_degree(len(node_points), edges)
     junctions = tuple(sorted(node_id for node_id, deg in degree.items() if deg >= 3))
     connectivity = ConnectivityGraph(

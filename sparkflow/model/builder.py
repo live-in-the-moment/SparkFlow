@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from .build_options import ModelBuildOptions, effective_device_templates
-from .symbol_recognition import attach_nearby_terminals, recognize_devices
+from .symbol_recognition import attach_nearby_terminals, enrich_contextual_switchgear, recognize_devices
 from .types import Point2D, SystemModel
 from .wire_classifier import extract_wire_segments, filter_wire_segments
 from ..cad.entities import CadEntity
@@ -35,6 +35,7 @@ def build_system_model(entities: tuple[CadEntity, ...], *, options: ModelBuildOp
     )
     wires, wire_unresolved = filter_wire_segments(raw_wires, devices, texts, wire_filter=wire_filter)
     devices, terminal_unresolved = attach_nearby_terminals(devices, wires, device_templates=device_templates)
+    devices = enrich_contextual_switchgear(devices)
     unresolved.extend(wire_unresolved)
     unresolved.extend(terminal_unresolved)
 

@@ -47,3 +47,4 @@ tmp_parse_compare/
 
 # Large local input datasets (do not upload by default)
 image/
+.artifacts

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sparkflow.local/ruleset.schema.json",
+  "title": "SparkFlow Ruleset",
+  "description": "Supports the structured rules schema and the legacy enabled_rules + params compatibility format.",
+  "oneOf": [
+    {
+      "title": "Structured Ruleset",
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "rules"
+          ]
+        },
+        {
+          "required": [
+            "rules_table"
+          ]
+        },
+        {
+          "required": [
+            "normative_summary"
+          ]
+        }
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "object"
+        },
+        "rules_table": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative or absolute path to a CSV/TSV/XLSX rules table with rule_id, enabled, severity, params, applies_to, title, and clause columns."
+        },
+        "normative_summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative or absolute path to a structured Markdown summary. Each rule uses a `## <rule_id>` heading followed by `- key: value` items for enabled, severity, params, applies_to, title, and clause."
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rule_id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "rule_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ]
+              },
+              "params": {
+                "type": "object"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "clause": {
+                "type": "string",
+                "minLength": 1
+              },
+              "applies_to": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "single_line",
+                    "electrical_schematic",
+                    "layout_or_installation",
+                    "general_supported_electrical",
+                    "other"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "Legacy Ruleset",
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled_rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,9 @@ from .cad.errors import CadParseError, UnsupportedCadFormatError
 from .cad.parse import CadParseOptions
 from .core import audit_dataset, audit_file, index_dataset
 from .model.build_options import model_build_options_from_dict
+from .reporting.dataset_report import write_dataset_audit_report
+from .reporting.rectification_checklist import write_rectification_checklist
+from .rules.diffing import write_ruleset_diff_artifacts
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,12 +62,36 @@ def main(argv: list[str] | None = None) -> int:
     audit_dataset_cmd.add_argument('--wire-ltype-exclude', action='append', default=None)
     audit_dataset_cmd.add_argument('--wire-min-length', type=float, default=None)
 
+    dataset_report_cmd = sub.add_parser('dataset-report', help='基于 audit-dataset 结果生成数据集最终报告')
+    dataset_report_cmd.add_argument('run_dir', type=Path, help='audit-dataset 生成的运行目录')
+    dataset_report_cmd.add_argument('--ruleset', type=Path, default=None, help='规则库目录（用于提取严格规则说明）')
+    dataset_report_cmd.add_argument('--out-md', type=Path, default=None, help='Markdown 输出路径')
+    dataset_report_cmd.add_argument('--out-docx', type=Path, default=None, help='DOCX 输出路径')
+    dataset_report_cmd.add_argument('--title', type=str, default='', help='报告标题')
+    dataset_report_cmd.add_argument('--dataset-label', type=str, default='', help='数据集标签（默认取 dataset_dir 最后一级目录）')
+
+    rectification_checklist_cmd = sub.add_parser(
+        'rectification-checklist',
+        help='基于现有 audit-dataset 结果生成失败图纸整改清单',
+    )
+    rectification_checklist_cmd.add_argument('run_dir', type=Path, help='audit-dataset 生成的运行目录')
+    rectification_checklist_cmd.add_argument('--out-md', type=Path, default=None, help='Markdown 输出路径')
+    rectification_checklist_cmd.add_argument('--out-docx', type=Path, default=None, help='DOCX 输出路径')
+    rectification_checklist_cmd.add_argument('--out-json', type=Path, default=None, help='JSON 输出路径')
+    rectification_checklist_cmd.add_argument('--title', type=str, default='', help='报告标题')
+    rectification_checklist_cmd.add_argument('--dataset-label', type=str, default='', help='数据集标签（默认取 dataset_dir 最后一级目录）')
+
+    ruleset_diff_cmd = sub.add_parser('ruleset-diff', help='比较两个规则集并输出 JSON/Markdown 比较报告')
+    ruleset_diff_cmd.add_argument('left', type=Path, help='基线规则集目录或 ruleset.json')
+    ruleset_diff_cmd.add_argument('right', type=Path, help='目标规则集目录或 ruleset.json')
+    ruleset_diff_cmd.add_argument('--out', type=Path, default=Path('ruleset_diff.json'), help='比较报告输出路径（.json/.md 或目录）')
+
     args = parser.parse_args(argv)
 
     if args.cmd == 'audit':
         try:
             cmd_str = (args.dwg_converter or '').strip() or os.environ.get('SPARKFLOW_DWG2DXF_CMD', '').strip()
-            dwg_cmd = shlex.split(cmd_str, posix=False) if cmd_str else None
+            dwg_cmd = _parse_dwg_converter_cmd(cmd_str)
             model_options = _build_model_options(args)
             output = audit_file(
                 args.path,
@@ -86,6 +113,9 @@ def main(argv: list[str] | None = None) -> int:
             print('文件不存在。', file=sys.stderr)
             return 2
         except UnsupportedCadFormatError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
         except CadParseError as exc:
@@ -112,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == 'audit-dataset':
         try:
             cmd_str = (args.dwg_converter or '').strip() or os.environ.get('SPARKFLOW_DWG2DXF_CMD', '').strip()
-            dwg_cmd = shlex.split(cmd_str, posix=False) if cmd_str else None
+            dwg_cmd = _parse_dwg_converter_cmd(cmd_str)
             model_options = _build_model_options(args)
             outp = audit_dataset(
                 args.dir,
@@ -146,6 +176,60 @@ def main(argv: list[str] | None = None) -> int:
         print(str(outp.summary_md_path))
         return 0
 
+    if args.cmd == 'dataset-report':
+        try:
+            artifacts = write_dataset_audit_report(
+                args.run_dir,
+                ruleset_dir=(args.ruleset if args.ruleset else None),
+                out_md=args.out_md,
+                out_docx=args.out_docx,
+                title=(args.title or None),
+                dataset_label=(args.dataset_label or None),
+            )
+        except FileNotFoundError:
+            print('数据集审图运行目录或必要 JSON 不存在。', file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(str(artifacts.markdown_path))
+        print(str(artifacts.docx_path))
+        return 0
+
+    if args.cmd == 'rectification-checklist':
+        try:
+            artifacts = write_rectification_checklist(
+                args.run_dir,
+                out_md=args.out_md,
+                out_docx=args.out_docx,
+                out_json=args.out_json,
+                title=(args.title or None),
+                dataset_label=(args.dataset_label or None),
+            )
+        except FileNotFoundError:
+            print('数据集审图运行目录或必要 JSON 不存在。', file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(str(artifacts.markdown_path))
+        print(str(artifacts.docx_path))
+        print(str(artifacts.json_path))
+        return 0
+
+    if args.cmd == 'ruleset-diff':
+        try:
+            artifact_paths = write_ruleset_diff_artifacts(args.left, args.right, args.out)
+        except FileNotFoundError:
+            print('规则集输入不存在。', file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(str(artifact_paths.json_path))
+        print(str(artifact_paths.markdown_path))
+        return 0
+
     return 2
 
 
@@ -166,6 +250,22 @@ def _build_model_options(args) -> object:
             'min_length': args.wire_min_length or 0.0,
         }
     return model_build_options_from_dict(model_cfg) if model_cfg else None
+
+
+def _parse_dwg_converter_cmd(raw: str) -> list[str] | None:
+    cmd_str = (raw or '').strip()
+    if not cmd_str:
+        return None
+    unquoted = cmd_str[1:-1] if len(cmd_str) >= 2 and cmd_str[0] == '"' and cmd_str[-1] == '"' else cmd_str
+    candidate = Path(unquoted)
+    if candidate.exists():
+        return [str(candidate)]
+    parsed = shlex.split(cmd_str, posix=False)
+    if len(parsed) == 1:
+        token = parsed[0]
+        if len(token) >= 2 and token[0] == '"' and token[-1] == '"':
+            return [token[1:-1]]
+    return parsed
 
 
 if __name__ == '__main__':

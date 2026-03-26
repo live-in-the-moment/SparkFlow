@@ -1,0 +1,9 @@
+{
+  "version": "example_ruleset_table_v1",
+  "model": {
+    "wire_filter": {
+      "min_length": 0.0
+    }
+  },
+  "rules_table": "rules.tsv"
+}

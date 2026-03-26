@@ -19,7 +19,8 @@ class WireFilter:
     exclude_text_dense_wires: bool = True
     text_density_radius: float = 18.0
     text_density_threshold: int = 5
-    text_dense_max_length: float = 80.0
+    text_dense_max_length: float = 120.0
+    specified_fields: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -146,7 +147,8 @@ def builtin_device_templates() -> tuple[DeviceTemplate, ...]:
             device_type='switchgear_unit',
             block_name='DK*',
             match_mode='glob',
-            text_keywords=('开关柜',),
+            text_keywords=('开关柜', '进线柜', '出线柜', '联络柜', '进线总柜'),
+            label_globs=('DK*', '*DK*'),
             terminals=(
                 TerminalDef(name='left', x=-12.0, y=0.0),
                 TerminalDef(name='right', x=12.0, y=0.0),
@@ -162,6 +164,7 @@ def builtin_device_templates() -> tuple[DeviceTemplate, ...]:
             block_name='DP*',
             match_mode='glob',
             text_keywords=('配电箱', '综合配电箱', '低压柜'),
+            label_globs=('DP*', '*DP*'),
             terminals=(
                 TerminalDef(name='left', x=-12.0, y=0.0),
                 TerminalDef(name='right', x=12.0, y=0.0),
@@ -190,10 +193,12 @@ def builtin_device_templates() -> tuple[DeviceTemplate, ...]:
             block_name='DF*',
             match_mode='glob',
             text_keywords=('电缆分支箱', '分支箱'),
+            label_globs=('DF*', '*DF*'),
             terminals=(
                 TerminalDef(name='feed', x=-14.0, y=0.0),
                 TerminalDef(name='branch_a', x=14.0, y=8.0),
                 TerminalDef(name='branch_b', x=14.0, y=-8.0),
+                TerminalDef(name='branch_c', x=14.0, y=16.0),
             ),
             footprint_radius=28.0,
             min_terminals=2,
@@ -211,7 +216,7 @@ def builtin_device_templates() -> tuple[DeviceTemplate, ...]:
         ),
         DeviceTemplate(
             device_type='feeder',
-            text_keywords=('进线侧', '出线侧', '进线', '出线', '馈线'),
+            text_keywords=('电缆进线', '电缆出线', '进线回路', '出线回路', '进线侧', '出线侧', '进线', '出线', '馈线'),
             terminals=(TerminalDef(name='line', x=0.0, y=0.0),),
             footprint_radius=18.0,
             min_terminals=1,
@@ -221,7 +226,7 @@ def builtin_device_templates() -> tuple[DeviceTemplate, ...]:
         DeviceTemplate(
             device_type='load',
             text_keywords=('所用电', '负荷', '用户', 'SPD', '浪涌保护器', '避雷器', '电容器', '电能表', '集中器', '配电智能终端', '低压避雷器', '回路状态', '巡检仪', '智能电容补偿', '无功补偿控制器'),
-            label_globs=('SPD*', 'BK*', 'C*', 'FB*'),
+            label_globs=('SPD*', 'BK*', 'C[0-9]*', 'FB*'),
             terminals=(TerminalDef(name='load', x=0.0, y=0.0),),
             footprint_radius=18.0,
             min_terminals=1,
@@ -250,7 +255,7 @@ def default_terminal_templates() -> tuple[TerminalTemplate, ...]:
 def default_model_build_options() -> ModelBuildOptions:
     fallback = ModelBuildOptions(
         wire_filter=WireFilter(
-            exclude_layers=('DIM', '标注', '文字', '图框', '标题', '尺寸'),
+            exclude_layers=('DIM', '标注', '文字', '图框', '标题', '尺寸', '中心线'),
             min_length=3.0,
             exclude_closed_polylines=True,
             exclude_internal_device_wires=True,
@@ -258,7 +263,7 @@ def default_model_build_options() -> ModelBuildOptions:
             exclude_text_dense_wires=True,
             text_density_radius=18.0,
             text_density_threshold=5,
-            text_dense_max_length=80.0,
+            text_dense_max_length=120.0,
         ),
         terminal_templates=default_terminal_templates(),
         device_templates=builtin_device_templates(),
@@ -300,7 +305,8 @@ def model_build_options_from_dict(d: dict[str, Any] | None) -> ModelBuildOptions
             exclude_text_dense_wires=bool(wf_raw.get('exclude_text_dense_wires', True)),
             text_density_radius=float(wf_raw.get('text_density_radius') or 18.0),
             text_density_threshold=int(wf_raw.get('text_density_threshold') or 5),
-            text_dense_max_length=float(wf_raw.get('text_dense_max_length') or 80.0),
+            text_dense_max_length=float(wf_raw.get('text_dense_max_length') or 120.0),
+            specified_fields=frozenset(str(key) for key in wf_raw.keys()),
         )
 
     terminal_templates = _parse_terminal_templates(d.get('terminal_templates') or ())
@@ -330,7 +336,7 @@ def merge_model_build_options(base: ModelBuildOptions | None, override: ModelBui
     if override is None:
         return base
 
-    wf = override.wire_filter if override.wire_filter is not None and override.wire_filter != base.wire_filter else base.wire_filter
+    wf = _merge_wire_filter(base.wire_filter, override.wire_filter)
 
     terminal_templates = base.terminal_templates
     if override.terminal_templates:
@@ -341,6 +347,26 @@ def merge_model_build_options(base: ModelBuildOptions | None, override: ModelBui
         device_templates = override.device_templates
 
     return ModelBuildOptions(wire_filter=wf, terminal_templates=terminal_templates, device_templates=device_templates)
+
+
+def _merge_wire_filter(base: WireFilter | None, override: WireFilter | None) -> WireFilter | None:
+    if base is None:
+        return override
+    if override is None:
+        return base
+
+    specified = override.specified_fields
+    if specified is None:
+        return override if override != base else base
+    if not specified:
+        return base
+
+    field_names = tuple(name for name in WireFilter.__dataclass_fields__ if name != 'specified_fields')
+    merged = {
+        name: getattr(override, name) if name in specified else getattr(base, name)
+        for name in field_names
+    }
+    return WireFilter(**merged, specified_fields=frozenset(field_names))
 
 def effective_device_templates(options: ModelBuildOptions | None) -> tuple[DeviceTemplate, ...]:
     if options is None:
