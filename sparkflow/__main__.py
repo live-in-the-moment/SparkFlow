@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             cmd_str = (args.dwg_converter or '').strip() or os.environ.get('SPARKFLOW_DWG2DXF_CMD', '').strip()
             dwg_cmd = _parse_dwg_converter_cmd(cmd_str)
             model_options = _build_model_options(args)
-            outp = audit_dataset(
+            output = audit_dataset(
                 args.dir,
                 args.out,
                 ruleset_dir=(args.ruleset if args.ruleset else None),
@@ -169,11 +169,11 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
-        print(str(outp.run_dir))
-        print(str(outp.index_json_path))
-        print(str(outp.run_dir / 'dataset_selection.json'))
-        print(str(outp.summary_json_path))
-        print(str(outp.summary_md_path))
+        print(str(output.run_dir))
+        print(str(output.index_json_path))
+        print(str(output.run_dir / 'dataset_selection.json'))
+        print(str(output.summary_json_path))
+        print(str(output.summary_md_path))
         return 0
 
     if args.cmd == 'dataset-report':
