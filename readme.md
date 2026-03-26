@@ -1,151 +1,258 @@
-一、项目目标（明确边界）
+# SparkFlow
 
-构建一个面向**电力一次系统图（优先）**的自动审图工具，实现：
+SparkFlow 是一个面向配电/一次系统图审查场景的 CAD 自动审图 CLI 工具。它当前聚焦于 `DWG/DXF -> 解析 -> 建模 -> 规则检查 -> JSON/Markdown/DOCX 报告` 这条本地批处理链路，适合研发验证、规则迭代、样本集回归和项目级离线审图。
 
-DWG/DXF 图纸解析
+## 项目定位
 
-图元结构化建模
+- 优先场景：一次系统图、单线图、电气图、配电箱/开关柜/电缆分支箱类图纸
+- 当前形态：本地 CLI 工具 + 批处理工作流
+- 当前边界：不是在线平台，也不是“任意规范文档自动转规则”的完整产品
+- 当前优势：可对目标图纸稳定输出结构化报告、数据集汇总、最终总报告、整改清单
 
-基于规则的自动审图
+## 核心能力
 
-错误检测与报告生成
+- `DWG/DXF` 图纸审图
+- `audit-dataset` 批量审图与筛图
+- `dataset-report` 数据集最终总报告
+- `rectification-checklist` 失败图纸坐标级整改清单
+- `ruleset-diff` 规则集版本差异比对
+- 规则集支持：
+  - 结构化 `ruleset.json`
+  - `CSV/TSV`
+  - `XLSX`
+  - 结构化规范摘要 `Markdown`
+- 报告输出支持：
+  - `report.json`
+  - `report.md`
+  - `report.docx`
+  - 数据集总报告 `final_audit_report.md/.docx`
+  - 整改清单 `rectification_checklist.md/.docx/.json`
 
-人工交互修正闭环
+## 总体流程图
 
-⚠️ 本阶段定位：工具型产品（单场景闭环），非平台型服务
-业务流程：
-- 用户上传一次系统图（DWG/DXF）
-- 工具解析图元，构建系统模型
-- 模型与规则引擎对比，检测错误
-- 生成错误报告，提示用户修正
-- 用户手动修正错误
-- 工具重复对比，确认无错误
-- 输出审核通过的系统图
-
-当前审图能力（默认最高级：拓扑 + 规则）：
-- 解析：实体类型/图层统计、bbox、关键坐标（LINE端点、TEXT/INSERT插入点等）
-- 建模：Device（label/device_type/terminals/source_entity_ids）
-- 拓扑：候选导线（LINE + LWPOLYLINE/POLYLINE 拆段）→ 端点吸附聚类 → nets（连通分量）→ 输出 connectivity.json
-- 规则：基础规则 + 拓扑级规则（以 connectivity.json 所对应的拓扑为输入）
-
-当前审图能力分级（Level 1/2/3）：
-- Level 1（图元抽取）：实体类型/图层统计、bbox、关键坐标（LINE端点、TEXT插入点、INSERT插入点）
-- Level 2（设备对象）：从 INSERT + 附近文本构建 Device（label/device_type/terminals/source_entity_ids）
-- Level 3（拓扑关系）：候选导线（LINE + LWPOLYLINE/POLYLINE 拆段）→ 端点吸附聚类 → 连通分量（nets）→ 输出 connectivity.json，并运行拓扑级规则
-
-
-⚠️ 语义边界（重要）：
-- 拓扑是“候选导线”的几何连通拓扑；候选导线需要通过图层/线型/长度过滤减少 DIM/标注引线等噪声
-- 设备类型识别与端子模板需要规则库持续补齐；未命中模板时会回退到“设备附近线端点聚类/默认端子”
-
-二、命令行使用
-
-单文件审图：
-- `python -m sparkflow audit <file.dxf|file.dwg> --out out`
-  - 可选：`--ruleset rulesets\\example`（加载规则库目录 ruleset.json）
-  - 可选：`--topo-tol 1.0`（拓扑吸附容差）
-  - 可选：候选导线过滤
-    - `--wire-layer-include <pattern>` / `--wire-layer-exclude <pattern>`（可重复）
-    - `--wire-ltype-include <pattern>` / `--wire-ltype-exclude <pattern>`（可重复）
-    - `--wire-min-length <float>`（过滤短线段）
-
-典设目录扫描索引：
-- `python -m sparkflow index <dataset_dir> --out out --hash`
-
-典设目录批量审图（单图报告 + 汇总报告）：
-- `python -m sparkflow audit-dataset <dataset_dir> --out out --ruleset rulesets\\example`
-
-测试用例（拓扑 + 报告输出）：
-- DXF（推荐先用 DXF 验证拓扑产物）：
-  - `python -m sparkflow audit "image\\111\\电缆CAD图纸\\国网低压典设第26章E模块2017-8-18.dxf" --out out_level3 --dxf-backend auto --topo-tol 1.0`
-  - `python -m sparkflow audit "image\\111\\电缆CAD图纸\\国网低压典设第25章B模块2017-12-11.dxf" --out out_level3 --dxf-backend auto --topo-tol 1.0`
-  - 预期输出：
-    - `out_level3\\<run_id>\\report.md`（最终报告文档）
-    - `out_level3\\<run_id>\\report.json`（结构化报告）
-    - `out_level3\\<run_id>\\report.docx`（Word 报告）
-    - `out_level3\\<run_id>\\connectivity.json`（连通图产物：nodes/edges/junctions/terminal_anchors）
-    - `out_level3\\<run_id>\\electrical.json`（电气图产物：components/terminals/nets/relations）
-
-三、DWG→DXF 转换器配置
-
-目前 DWG 需要先转换为 DXF 才能进入解析与审图。支持两类后端：
-
-1) 外部转换器（推荐，适合批处理/服务化）
-- 通过参数传入：`--dwg-backend cli --dwg-converter "<cmd...>"`
-- 或通过环境变量：`SPARKFLOW_DWG2DXF_CMD="<cmd...>"`
-- 命令约定：
-  - 默认会在命令后追加 `<input.dwg> <output.dxf>`
-  - 若命令中包含 `{in}` `{out}`，则使用占位符替换（不再追加）
-
-2) AutoCAD COM（可选，需安装 AutoCAD）
-- 通过参数启用：`--dwg-backend autocad`
-- 需要本机 AutoCAD 可用，且 Python 环境安装 pywin32（用于 COM 调用）
-
-四、DXF 解析后端（auto / ascii / ezdxf）
-
-SparkFlow 提供三种 DXF 解析后端（默认 `auto`，推荐用于审图）：
-
-- `auto`：审图优先策略
-  - 先尝试 `ascii`；若解析失败，或解析质量指标不达标（例如 bbox 缺失/关键实体缺失），则回退到 `ezdxf`
-  - 报告会记录最终使用的后端与回退原因，便于复现与调参
-- `ascii`：自研 ASCII DXF 解析器（基于 group code 两行一组抽取 `SECTION ENTITIES`）
-  - 优点：依赖少、行为可控、适合快速统计/批处理扫描
-  - 局限：对复杂 DXF 特性支持有限（例如部分实体字段、容错与兼容性）
-- `ezdxf`：基于 ezdxf 的 DXF 读取与实体遍历
-  - 优点：覆盖更多 DXF 实体与字段，兼容性更强，便于扩展对象识别
-  - 代价：资源开销更高；且 ezdxf 不负责 DWG→DXF 或 DXF 版本转换
-
-使用方式：
-- 单文件：`python -m sparkflow audit <file.dxf|file.dwg> --dxf-backend ascii|ezdxf|auto`
-- 批处理：`python -m sparkflow audit-dataset <dataset_dir> --dxf-backend ascii|ezdxf|auto`
-
-五、规则知识库（ruleset.json）
-
-规则库目录需包含 `ruleset.json`，最小示例见 `rulesets/example/ruleset.json`。
-
-规则框架：
-- 规则以 `rule_id` 标识，通过 `enabled_rules` 控制启用列表
-- `params` 支持为每条规则传参（例如 `wire.floating_endpoints.tol`、`device.missing_label.radius`）
-- 内置规则（可在规则注册表中查看）：
-  - `wire.floating_endpoints`：悬空线端点（基于候选导线 wires）
-  - `device.missing_label`：设备缺少附近文本标注
-  - `device.duplicate_label`：设备标注重复
-  - `topo.terminal_unconnected`：端子未连接到任何导线网络（需要拓扑产物）
-  - `topo.breaker_same_net`：断路器多个端子落在同一网络（需要拓扑产物与 ≥2 端子）
-
-建模参数（ruleset.json 的 params._model）：
-- `wire_filter`：候选导线过滤（include/exclude layers、include/exclude linetypes、min_length）
-- `terminal_templates`：设备端子模板（按 block_name 匹配，支持 equals/contains/glob + 可选 ATTRIB 条件；terminals 至少 2 个）
-
-ruleset.json 示例（截取）：
-```json
-{
-  "version": "my_ruleset_v1",
-  "enabled_rules": [
-    "wire.floating_endpoints",
-    "device.missing_label",
-    "device.duplicate_label",
-    "topo.terminal_unconnected",
-    "topo.breaker_same_net"
-  ],
-  "params": {
-    "_model": {
-      "wire_filter": {
-        "exclude_layers": ["DIM", "标注", "设备"],
-        "min_length": 0.0
-      },
-      "terminal_templates": [
-        {
-          "block_name": "BKR*",
-          "match_mode": "glob",
-          "terminals": [
-            {"name": "in", "x": -10.0, "y": 0.0},
-            {"name": "out", "x": 10.0, "y": 0.0}
-          ]
-        }
-      ]
-    },
-    "wire.floating_endpoints": {"tol": 1.0}
-  }
-}
+```mermaid
+flowchart LR
+  A["DWG / DXF 图纸"] --> B["CAD 解析<br/>DXF 读取 / DWG 转 DXF"]
+  B --> C["图纸筛选与分类<br/>supported_electrical / geometry_only / unsupported"]
+  C --> D["结构化建模<br/>设备识别 / 导线抽取 / 端子推断"]
+  D --> E["连通图与电气图"]
+  E --> F["规则引擎<br/>规则集 + 参数 + 图纸类型分级"]
+  F --> G["单图报告<br/>report.json / report.md / report.docx"]
+  G --> H["数据集汇总<br/>dataset_summary / final_audit_report / rectification_checklist"]
 ```
+
+### 当前阶段说明
+
+- 本阶段仍是工具型产品（单场景闭环），不是在线平台服务
+- 典型闭环流程：上传图纸、解析建模、规则检测、输出报告、人工整改、复审确认
+- 当前默认最高能力层级是“拓扑 + 规则”，核心产物包括 `connectivity.json` 与 `electrical.json`
+
+### 审图能力分级
+
+- Level 1：图元抽取，输出实体类型/图层统计、bbox、关键坐标
+- Level 2：设备对象识别，从 `INSERT +` 附近文本构建设备与端子
+- Level 3：拓扑关系建模，对候选导线进行拆段、吸附聚类、连通分量分析，并运行拓扑级规则
+
+### 语义边界
+
+- 拓扑是“候选导线”的几何连通拓扑，需要通过图层/线型/长度过滤减少 DIM、标注引线等噪声
+- 设备类型识别与端子模板依赖规则库持续补齐；未命中模板时会退回到附近线端点聚类/默认端子策略
+
+## 功能架构图
+
+```mermaid
+flowchart TB
+  U["用户 / 审图工程师"] --> CLI["CLI 命令层<br/>audit / audit-dataset / dataset-report / rectification-checklist / ruleset-diff"]
+  CLI --> CORE["核心流程层<br/>sparkflow/core.py"]
+  CLI --> RULESET["规则输入层<br/>JSON / CSV / TSV / XLSX / 规范摘要 Markdown"]
+
+  CORE --> CAD["CAD 解析层<br/>sparkflow/cad"]
+  CORE --> MODEL["建模层<br/>sparkflow/model"]
+  CORE --> RULES["规则执行层<br/>sparkflow/rules"]
+  CORE --> REPORT["报告层<br/>sparkflow/reporting"]
+
+  CAD --> MODEL
+  MODEL --> RULES
+  RULESET --> RULES
+  RULES --> REPORT
+
+  REPORT --> OUT1["单图产物<br/>report.json / report.md / report.docx"]
+  REPORT --> OUT2["数据集产物<br/>dataset_summary / final_audit_report / rectification_checklist"]
+```
+
+## 输出示意图
+
+```mermaid
+flowchart TD
+  RUN["一次 audit-dataset 运行"] --> IDX["dataset_index.json"]
+  RUN --> SEL["dataset_selection.json"]
+  RUN --> SUM["dataset_summary.json / dataset_summary.md"]
+  RUN --> FINAL["final_audit_report.md / .docx"]
+  RUN --> RECT["rectification_checklist.md / .docx / .json"]
+  RUN --> FILES["files/"]
+
+  FILES --> F1["<分类>/<图纸名__hash>/report.json"]
+  FILES --> F2["<分类>/<图纸名__hash>/report.md"]
+  FILES --> F3["<分类>/<图纸名__hash>/report.docx"]
+  FILES --> F4["<分类>/<图纸名__hash>/connectivity.json"]
+  FILES --> F5["<分类>/<图纸名__hash>/electrical.json"]
+```
+
+## 当前命令
+
+```text
+sparkflow audit
+sparkflow index
+sparkflow audit-dataset
+sparkflow dataset-report
+sparkflow rectification-checklist
+sparkflow ruleset-diff
+```
+
+## 快速开始
+
+### 1. 安装环境
+
+要求：
+
+- Python `3.10+`
+- Windows PowerShell 或命令行
+- 依赖包：
+  - `ezdxf>=1.4.3`
+  - `python-docx>=1.1.0`
+- 可选：
+  - `ODA File Converter`，用于 `DWG -> DXF`
+  - `AutoCAD + pywin32`，用于 `autocad` 后端
+
+安装：
+
+```powershell
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+推荐在 Windows 上开启 UTF-8：
+
+```powershell
+$env:PYTHONUTF8='1'
+```
+
+或直接：
+
+```powershell
+python -X utf8 -m sparkflow --help
+```
+
+### 2. 单图审图
+
+```powershell
+python -X utf8 -m sparkflow audit "image\\111\\配电部分CAD\\低压开关柜DK-1\\380V.dwg" `
+  --out out `
+  --ruleset rulesets\\example `
+  --dwg-backend cli `
+  --dwg-converter "D:\\Program Files\\ODA\\ODAFileConverter 27.1.0\\ODAFileConverter.exe"
+```
+
+### 3. 数据集批量审图
+
+```powershell
+python -X utf8 -m sparkflow audit-dataset "image\\111\\配电部分CAD" `
+  --out out_oda_dataset `
+  --ruleset rulesets\\example `
+  --dwg-backend cli `
+  --dwg-converter "D:\\Program Files\\ODA\\ODAFileConverter 27.1.0\\ODAFileConverter.exe" `
+  --workers 3 `
+  --dwg-timeout 300
+```
+
+### 4. 生成数据集总报告
+
+```powershell
+python -X utf8 -m sparkflow dataset-report out_oda_dataset\\20260325T100443Z `
+  --ruleset rulesets\\example
+```
+
+### 5. 生成整改清单
+
+```powershell
+python -X utf8 -m sparkflow rectification-checklist out_oda_dataset\\20260325T100443Z
+```
+
+### 6. 比较规则集差异
+
+```powershell
+python -X utf8 -m sparkflow ruleset-diff rulesets\\example rulesets\\stategrid_peidian_strict `
+  --out out\\ruleset_diff
+```
+
+## 典型输出目录
+
+`audit-dataset` 运行目录通常包含：
+
+```text
+<run_dir>/
+  dataset_index.json
+  dataset_selection.json
+  dataset_summary.json
+  dataset_summary.md
+  final_audit_report.md
+  final_audit_report.docx
+  rectification_checklist.md
+  rectification_checklist.docx
+  rectification_checklist.json
+  files/
+    <分类>/<图纸名__hash>/
+      report.json
+      report.md
+      report.docx
+      connectivity.json
+      electrical.json
+```
+
+## 文档导航
+
+- [项目概览与架构](docs/architecture.md)
+- [快速开始与命令示例](docs/quick-start.md)
+- [规则集与规则输入](docs/rulesets.md)
+- [报告与整改清单说明](docs/reports.md)
+- [部署、环境与运维建议](docs/deployment.md)
+
+## 仓库结构
+
+```text
+sparkflow/        核心源码
+rulesets/         示例规则集、严格规则集、表格/XLSX/规范摘要示例
+catalog/          设备模板、导线过滤配置
+scripts/          辅助脚本
+tests/            测试
+image/            样例图纸
+docs/             使用与部署文档
+```
+
+## 现在适合用它做什么
+
+- 对既有样本集做批量审图
+- 对规则集做回归验证和差异比对
+- 生成项目级最终总报告和整改清单
+- 迭代设备识别、规则和报告格式
+
+## 现在还不适合直接承诺什么
+
+- 任意规范文档自动转可执行规则
+- 任意图纸类型稳定审图
+- 在线多用户平台能力
+- 完整的人工复核闭环系统
+
+## 相关规则集
+
+- [example](rulesets/example/ruleset.json)：默认示例规则集
+- [stategrid_peidian_strict](rulesets/stategrid_peidian_strict/ruleset.json)：将 `wire.floating_endpoints` 提升为严格判定的规则集
+- [example_table](rulesets/example_table/ruleset.json)：表格规则集示例
+- [example_xlsx](rulesets/example_xlsx/ruleset.json)：Excel 规则集示例
+- [example_normative](rulesets/example_normative/ruleset.json)：规范摘要规则集示例
+
+## 开发提示
+
+- 当前工作树可能包含大量实验产物和历史输出，提交或归档前建议先确认目标运行目录
+- 处理中文路径和中文 Markdown/DOCX 时，建议始终使用 UTF-8
+- 若在 PowerShell 中拼接内联脚本生成中文文本，容易出现 `?` 替换，建议优先使用仓库内正式命令和模块

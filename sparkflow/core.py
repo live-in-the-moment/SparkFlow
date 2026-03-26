@@ -33,6 +33,31 @@ from .rules.knowledgebase import load_ruleset_dir
 from .rules.ruleset import default_ruleset, rule_version
 from .util import sha256_file
 
+_THIRD_BATCH_RULE_NOTES = {
+    'electrical.incoming_transformer_busbar_direction': {
+        'title': '进线柜-变压器-母线方向一致性',
+        'meaning': '检查进线柜的变压器侧与母线侧是否位于相对两侧，避免一次系统图方向关系混乱。',
+    },
+    'electrical.tie_busbar_segment_consistency': {
+        'title': '联络柜两侧母线分段一致性',
+        'meaning': '检查联络柜两侧母线是否具有清晰且彼此独立的分段标识，避免把同段母线误画成联络关系。',
+    },
+}
+
+_DRAWING_TYPE_LABELS = {
+    'single_line': '单线/一次系统图',
+    'electrical_schematic': '电气图',
+    'layout_or_installation': '布置/安装类图纸',
+    'general_supported_electrical': '一般电气审图图纸',
+    'other': '其他',
+}
+
+_SEVERITY_RANK = {
+    Severity.INFO: 0,
+    Severity.WARNING: 1,
+    Severity.ERROR: 2,
+}
+
 
 @dataclass(frozen=True)
 class _FileAuditResult:
@@ -139,6 +164,8 @@ def audit_dataset(
     run_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     run_dir = out_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    dwg_work_root = run_dir / '_dwg_work'
+    dwg_work_root.mkdir(parents=True, exist_ok=True)
 
     index_json_path = run_dir / 'dataset_index.json'
     index_json_path.write_text(
@@ -188,7 +215,7 @@ def audit_dataset(
                 rel_path=rel,
                 out_dir=file_out_dir,
                 input_sha256=entry.sha256 or sha256_file(abs_path),
-                parse_options=_file_parse_options(parse_options, file_out_dir),
+                parse_options=_file_parse_options(parse_options, dwg_work_root, rel),
                 level=level,
                 model_options=resolved_model_options,
                 rules=rules,
@@ -289,33 +316,26 @@ def _audit_single_path(
     started = time.perf_counter()
     parsed = None
     selection = resolve_selection(input_path, rel_path=rel_path, mode=selection_mode)
-    if _selection_needs_text_refinement(selection_mode, selection):
-        parsed = parse_cad(input_path, options=parse_options)
-        selection = resolve_selection(
-            input_path,
-            rel_path=rel_path,
-            mode=selection_mode,
-            texts=selection_texts_from_entities(parsed.entities),
-        )
-    selection_payload = {
-        'drawing_class': selection.drawing_class,
-        'reason': selection.reason,
-        'eligible_for_electrical': selection.eligible_for_electrical,
-    }
-    selection_json_path = out_dir / 'selection.json'
-    selection_json_path.write_text(json.dumps(selection_payload, ensure_ascii=False, indent=2), encoding='utf-8')
-
     report_json_path = out_dir / 'report.json'
     report_md_path = out_dir / 'report.md'
     artifacts: dict[str, str] = {'selection_json': 'selection.json', 'report_docx': 'report.docx'}
     approved_dir: Path | None = None
 
-    if graph != 'electrical':
-        raise ValueError(f'仅支持 electrical graph：{graph}')
-
     try:
+        if graph != 'electrical':
+            raise ValueError(f'仅支持 electrical graph：{graph}')
+
+        if _selection_needs_text_refinement(selection_mode, selection):
+            parsed = parse_cad(input_path, options=parse_options)
+            selection = resolve_selection(
+                input_path,
+                rel_path=rel_path,
+                mode=selection_mode,
+                texts=selection_texts_from_entities(parsed.entities),
+            )
+
         if not selection.eligible_for_electrical:
-            summary = _build_skip_summary(selection)
+            summary = _build_skip_summary(selection, input_path=input_path)
             if parsed is not None and parsed.meta:
                 summary['parse'] = parsed.meta
             report = AuditReport(
@@ -351,11 +371,19 @@ def _audit_single_path(
                     encoding='utf-8',
                 )
                 write_debug_svg(model, out_dir / 'debug_overlay.svg', title=rel_path)
-            summary = _build_summary(model, selection)
+            drawing_type = _infer_drawing_type(input_path, selection)
+            summary = _build_summary(model, selection, input_path=input_path)
             if parsed.meta:
                 summary['parse'] = parsed.meta
             engine = RuleEngine(rules)
-            issues = tuple(engine.run(model))
+            issues = tuple(
+                _finalize_issues(
+                    engine.run(model, drawing_type=drawing_type),
+                    selection=selection,
+                    input_path=input_path,
+                )
+            )
+            summary['rule_hit_notes'] = _build_rule_hit_notes(issues, selection=selection, input_path=input_path)
             report = AuditReport(
                 created_at=AuditReport.now_iso(),
                 input_path=str(input_path),
@@ -388,7 +416,7 @@ def _audit_single_path(
                     ),
                 ),
             ),
-            summary=_build_failure_summary(selection, str(exc)),
+            summary=_build_failure_summary(selection, str(exc), input_path=input_path),
             artifacts=artifacts,
         )
         status = 'unprocessed'
@@ -407,11 +435,18 @@ def _audit_single_path(
                     refs=(ObjectRef(kind='file', id=str(input_path)),),
                 ),
             ),
-            summary=_build_failure_summary(selection, str(exc)),
+            summary=_build_failure_summary(selection, str(exc), input_path=input_path),
             artifacts=artifacts,
         )
         status = 'unprocessed'
 
+    selection_payload = {
+        'drawing_class': selection.drawing_class,
+        'reason': selection.reason,
+        'eligible_for_electrical': selection.eligible_for_electrical,
+    }
+    selection_json_path = out_dir / 'selection.json'
+    selection_json_path.write_text(json.dumps(selection_payload, ensure_ascii=False, indent=2), encoding='utf-8')
     report_json_path.write_text(json.dumps(serialize_report(report), ensure_ascii=False, indent=2), encoding='utf-8')
     report_md_path.write_text(render_markdown_report(report), encoding='utf-8')
     write_docx_report(report, out_dir / 'report.docx')
@@ -472,36 +507,139 @@ def _attach_selection(model: SystemModel, selection: DrawingSelection) -> System
     )
 
 
-def _build_skip_summary(selection: DrawingSelection) -> dict:
+def _build_skip_summary(selection: DrawingSelection, *, input_path: Path | None = None) -> dict:
+    drawing_type = _infer_drawing_type(input_path or Path(''), selection)
     return {
         'classification': {
             'drawing_class': selection.drawing_class,
             'reason': selection.reason,
             'eligible_for_electrical': selection.eligible_for_electrical,
+            'drawing_type': drawing_type,
+            'drawing_type_label': _DRAWING_TYPE_LABELS[drawing_type],
         },
         'connectivity': {'enabled': False, 'reason': 'drawing_not_eligible'},
         'electrical': {'enabled': False, 'reason': 'drawing_not_eligible'},
     }
 
 
-def _build_failure_summary(selection: DrawingSelection, reason: str) -> dict:
-    base = _build_skip_summary(selection)
+def _build_failure_summary(selection: DrawingSelection, reason: str, *, input_path: Path | None = None) -> dict:
+    base = _build_skip_summary(selection, input_path=input_path)
     base['connectivity'] = {'enabled': False, 'reason': reason}
     base['electrical'] = {'enabled': False, 'reason': reason}
     return base
 
 
-def _build_summary(model: SystemModel, selection: DrawingSelection) -> dict:
+def _build_summary(model: SystemModel, selection: DrawingSelection, *, input_path: Path | None = None) -> dict:
+    drawing_type = _infer_drawing_type(input_path or Path(''), selection)
     out = {
         'classification': {
             'drawing_class': selection.drawing_class,
             'reason': selection.reason,
             'eligible_for_electrical': selection.eligible_for_electrical,
+            'drawing_type': drawing_type,
+            'drawing_type_label': _DRAWING_TYPE_LABELS[drawing_type],
         },
         'connectivity': _connectivity_summary(model),
         'electrical': _electrical_summary(model),
     }
     return out
+
+
+def _finalize_issues(
+    issues: list[Issue],
+    *,
+    selection: DrawingSelection,
+    input_path: Path,
+) -> list[Issue]:
+    drawing_type = _infer_drawing_type(input_path, selection)
+    finalized: list[Issue] = []
+    for issue in issues:
+        target = _graded_severity_for_issue(issue.rule_id, drawing_type=drawing_type)
+        if target is None or _SEVERITY_RANK[target] <= _SEVERITY_RANK[issue.severity]:
+            finalized.append(issue)
+            continue
+        finalized.append(
+            Issue(
+                rule_id=issue.rule_id,
+                severity=target,
+                message=issue.message,
+                refs=issue.refs,
+            )
+        )
+    return finalized
+
+
+def _build_rule_hit_notes(
+    issues: tuple[Issue, ...],
+    *,
+    selection: DrawingSelection,
+    input_path: Path,
+) -> list[dict[str, object]]:
+    drawing_type = _infer_drawing_type(input_path, selection)
+    grouped: dict[str, list[Issue]] = {}
+    for issue in issues:
+        if issue.rule_id not in _THIRD_BATCH_RULE_NOTES:
+            continue
+        grouped.setdefault(issue.rule_id, []).append(issue)
+
+    notes: list[dict[str, object]] = []
+    for rule_id, grouped_issues in grouped.items():
+        meta = _THIRD_BATCH_RULE_NOTES[rule_id]
+        severity = max((issue.severity for issue in grouped_issues), key=lambda current: _SEVERITY_RANK[current])
+        notes.append(
+            {
+                'rule_id': rule_id,
+                'title': meta['title'],
+                'count': len(grouped_issues),
+                'severity': severity.value,
+                'drawing_type': drawing_type,
+                'drawing_type_label': _DRAWING_TYPE_LABELS[drawing_type],
+                'meaning': meta['meaning'],
+                'grading_reason': _grading_reason_for_rule(rule_id, drawing_type=drawing_type),
+            }
+        )
+    notes.sort(key=lambda item: (item['rule_id']))
+    return notes
+
+
+def _graded_severity_for_issue(rule_id: str, *, drawing_type: str) -> Severity | None:
+    if rule_id not in _THIRD_BATCH_RULE_NOTES:
+        return None
+    if drawing_type == 'single_line':
+        return Severity.ERROR
+    if drawing_type == 'electrical_schematic':
+        return Severity.WARNING
+    if drawing_type == 'general_supported_electrical':
+        return Severity.WARNING
+    return Severity.INFO
+
+
+def _grading_reason_for_rule(rule_id: str, *, drawing_type: str) -> str:
+    if rule_id not in _THIRD_BATCH_RULE_NOTES:
+        return '未定义分级策略。'
+    if drawing_type == 'single_line':
+        return '该类图纸直接表达一次接线与主供电关系，命中后按 error 处理。'
+    if drawing_type == 'electrical_schematic':
+        return '该类图纸主要用于说明柜内电气关系，命中后按 warning 提示复核。'
+    if drawing_type == 'general_supported_electrical':
+        return '该类图纸具备电气审图价值，但方向/分段语义可能不完整，命中后按 warning 提示。'
+    return '该类图纸不以一次方向关系为主，命中后仅作 info 提示。'
+
+
+def _infer_drawing_type(input_path: Path, selection: DrawingSelection) -> str:
+    stem = ''
+    if input_path:
+        stem = input_path.stem
+    compact = ''.join(stem.split()).lower()
+    if any(token in compact for token in ('主接线', '一次系统图', '系统图', '380v')):
+        return 'single_line'
+    if '电气图' in compact:
+        return 'electrical_schematic'
+    if any(token in compact for token in ('平面', '剖面', '布置', '安装', '杆型', '方案')):
+        return 'layout_or_installation'
+    if selection.eligible_for_electrical:
+        return 'general_supported_electrical'
+    return 'other'
 
 
 def _connectivity_summary(model: SystemModel) -> dict:
@@ -628,13 +766,18 @@ def _dataset_file_out_dir(run_dir: Path, rel_path: str) -> Path:
     return run_dir / 'files' / path.parent / f'{path.stem}__{token}'
 
 
-def _file_parse_options(parse_options: CadParseOptions | None, file_out_dir: Path) -> CadParseOptions | None:
+def _file_parse_options(
+    parse_options: CadParseOptions | None,
+    dwg_work_root: Path,
+    rel_path: str,
+) -> CadParseOptions | None:
     if parse_options is None:
         return None
+    work_id = hashlib.sha1(rel_path.encode('utf-8')).hexdigest()[:16]
     return CadParseOptions(
         dwg_backend=parse_options.dwg_backend,
         dwg_converter_cmd=parse_options.dwg_converter_cmd,
-        dwg_work_dir=(file_out_dir / '_dwg_work'),
+        dwg_work_dir=(dwg_work_root / f'dwg_{work_id}'),
         dwg_timeout_sec=parse_options.dwg_timeout_sec,
         dxf_backend=parse_options.dxf_backend,
         topology_tol=parse_options.topology_tol,

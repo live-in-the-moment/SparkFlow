@@ -1,0 +1,17 @@
+rule_id	enabled	severity	params	applies_to
+wire.floating_endpoints	true	warning	{"tol": 0.001}	single_line|electrical_schematic|general_supported_electrical
+device.missing_label	true		{"radius": 10.0}	single_line|electrical_schematic|general_supported_electrical
+device.duplicate_label	true		{}	
+device.label_pattern_invalid	true	warning	{}	single_line|electrical_schematic|general_supported_electrical
+electrical.component_missing_terminals	true		{}	
+electrical.component_unconnected	true	warning	{}	
+electrical.transformer_same_net	true		{}	
+electrical.switch_same_net	true		{}	
+electrical.switchgear_role_connection	true	warning	{}	single_line|electrical_schematic
+electrical.switchgear_feed_chain	true	warning	{}	single_line|electrical_schematic
+electrical.tie_switchgear_dual_side	true	warning	{}	single_line|electrical_schematic
+electrical.incoming_transformer_busbar_direction	true	warning	{"min_axis_separation": 2.0}	single_line
+electrical.tie_busbar_segment_consistency	true	warning	{}	single_line|electrical_schematic
+electrical.busbar_underconnected	true	warning	{"min_connected_terminals": 2}	
+electrical.branch_box_insufficient_branches	true		{"min_branch_terminals": 2}	
+electrical.relation_unresolved	false		{}	

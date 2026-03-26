@@ -84,7 +84,8 @@
       "device_type": "switchgear_unit",
       "block_name": "DK*",
       "match_mode": "glob",
-      "text_keywords": ["开关柜"],
+      "text_keywords": ["开关柜", "进线柜", "出线柜", "联络柜", "进线总柜"],
+      "label_globs": ["DK*", "*DK*"],
       "terminals": [
         {"name": "left", "x": -12.0, "y": 0.0},
         {"name": "right", "x": 12.0, "y": 0.0}
@@ -100,6 +101,7 @@
       "block_name": "DP*",
       "match_mode": "glob",
       "text_keywords": ["配电箱", "综合配电箱", "低压柜"],
+      "label_globs": ["DP*", "*DP*"],
       "terminals": [
         {"name": "left", "x": -12.0, "y": 0.0},
         {"name": "right", "x": 12.0, "y": 0.0}
@@ -128,10 +130,12 @@
       "block_name": "DF*",
       "match_mode": "glob",
       "text_keywords": ["电缆分支箱", "分支箱"],
+      "label_globs": ["DF*", "*DF*"],
       "terminals": [
         {"name": "feed", "x": -14.0, "y": 0.0},
         {"name": "branch_a", "x": 14.0, "y": 8.0},
-        {"name": "branch_b", "x": 14.0, "y": -8.0}
+        {"name": "branch_b", "x": 14.0, "y": -8.0},
+        {"name": "branch_c", "x": 14.0, "y": 16.0}
       ],
       "footprint_radius": 28.0,
       "min_terminals": 2,
@@ -149,7 +153,7 @@
     },
     {
       "device_type": "feeder",
-      "text_keywords": ["进线侧", "出线侧", "进线", "出线", "馈线"],
+      "text_keywords": ["电缆进线", "电缆出线", "进线回路", "出线回路", "进线侧", "出线侧", "进线", "出线", "馈线"],
       "terminals": [
         {"name": "line", "x": 0.0, "y": 0.0}
       ],
@@ -161,7 +165,7 @@
     {
       "device_type": "load",
       "text_keywords": ["所用电", "负荷", "用户", "SPD", "浪涌保护器", "避雷器", "电容器", "电能表", "集中器", "配电智能终端", "低压避雷器", "回路状态", "巡检仪", "智能电容补偿", "无功补偿控制器"],
-      "label_globs": ["SPD*", "BK*", "C*", "FB*"],
+      "label_globs": ["SPD*", "BK*", "C[0-9]*", "FB*"],
       "terminals": [
         {"name": "load", "x": 0.0, "y": 0.0}
       ],

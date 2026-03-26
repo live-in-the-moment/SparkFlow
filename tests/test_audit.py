@@ -62,6 +62,22 @@ class AuditTests(unittest.TestCase):
             self.assertFalse(report['passed'])
             self.assertEqual(report['issues'][0]['rule_id'], 'cad.parse_failed')
 
+    def test_audit_380v_dwg_without_converter_still_writes_report(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dwg = root / '380V.dwg'
+            out = root / 'out'
+            dwg.write_bytes(b'')
+
+            result = audit_file(dwg, out, level=3)
+            self.assertTrue(result.report_json_path.exists())
+            self.assertTrue(result.report_md_path.exists())
+            self.assertIsNone(result.approved_artifact_dir)
+
+            report = json.loads(result.report_json_path.read_text(encoding='utf-8'))
+            self.assertFalse(report['passed'])
+            self.assertEqual(report['issues'][0]['rule_id'], 'cad.parse_failed')
+
 
 _DXF_OK = """0
 SECTION
