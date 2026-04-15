@@ -12,6 +12,9 @@ SparkFlow 是一个面向配电/一次系统图审查场景的 CAD 自动审图 
 ## 核心能力
 
 - `DWG/DXF` 图纸审图
+- `drawing-info` 单图结构化信息提取
+- `review-audit` 结合评审意见目录生成文档驱动复审报告
+- `review-pipeline` 一次完成复审、按图框拆分、整改问题清单生成
 - `audit-dataset` 批量审图与筛图
 - `dataset-report` 数据集最终总报告
 - `rectification-checklist` 失败图纸坐标级整改清单
@@ -62,14 +65,17 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  U["用户 / 审图工程师"] --> CLI["CLI 命令层<br/>audit / audit-dataset / dataset-report / rectification-checklist / ruleset-diff"]
+  U["用户 / 审图工程师"] --> CLI["CLI 命令层<br/>audit / drawing-info / review-audit / review-pipeline / audit-dataset / dataset-report / rectification-checklist / ruleset-diff"]
   CLI --> CORE["核心流程层<br/>sparkflow/core.py"]
+  CLI --> REVIEW["复审流程层<br/>sparkflow/review.py / review_workflow.py"]
   CLI --> RULESET["规则输入层<br/>JSON / CSV / TSV / XLSX / 规范摘要 Markdown"]
 
   CORE --> CAD["CAD 解析层<br/>sparkflow/cad"]
   CORE --> MODEL["建模层<br/>sparkflow/model"]
   CORE --> RULES["规则执行层<br/>sparkflow/rules"]
   CORE --> REPORT["报告层<br/>sparkflow/reporting"]
+  REVIEW --> CAD
+  REVIEW --> REPORT
 
   CAD --> MODEL
   MODEL --> RULES
@@ -78,7 +84,45 @@ flowchart TB
 
   REPORT --> OUT1["单图产物<br/>report.json / report.md / report.docx"]
   REPORT --> OUT2["数据集产物<br/>dataset_summary / final_audit_report / rectification_checklist"]
+  REVIEW --> OUT3["复审产物<br/>drawing_info / review_report / split manifest / 整改问题清单"]
 ```
+
+## 文档驱动复审实现方案
+
+当前项目里已经把“输入一份 `DWG` + 一份评审意见目录，输出复审结果和整改清单”的链路收口成稳定接口：
+
+| 层级 | 文件 | 责任 |
+| --- | --- | --- |
+| CLI 入口 | `sparkflow/__main__.py` | 暴露 `drawing-info`、`review-audit`、`review-pipeline` 三个命令 |
+| 图纸抽取 | `sparkflow/review.py` | 提取 `drawing_info.json`，加载 `评审意见` 目录，生成 `review_report` |
+| 复审编排 | `sparkflow/review_workflow.py` | 复用 `review_audit()` 结果，执行图框拆分、单页文本提取、整改清单汇总 |
+| CAD 基础能力 | `sparkflow/cad/*` | `DWG -> DXF` 转换、`DXF` 解析、视口/图元基础读取 |
+| 结果输出 | `docs/review-pipeline.md` | 说明命令、Python API、产物结构和已知限制 |
+
+### `review-pipeline` 架构流程图
+
+```mermaid
+flowchart LR
+  A["输入<br/>DWG / DXF + 评审意见目录"] --> B["CLI / Python API<br/>review-pipeline()"]
+  B --> C["review_audit()<br/>drawing_info + review_bundle + review_report"]
+  C --> D["DWG 转 DXF<br/>复用 converted_dxf"]
+  D --> E["Layout1 图框识别<br/>A3/A4 frame + viewport"]
+  E --> F["单页拆分<br/>SVG / PNG / texts.json / manifest.json"]
+  C --> G["评审意见结果<br/>evidence_found / not_found / manual_required"]
+  F --> H["逐页问题汇总<br/>placeholder / 暂命名 / 未定稿"]
+  G --> I["评审意见闭环汇总"]
+  H --> J["整改问题清单.md / .json"]
+  I --> J
+```
+
+### 典型输出
+
+- `drawing_info.json`：图纸结构化摘要、唯一文本、占位符文本
+- `review_bundle.json`：从 `评审意见` 目录抽取出的项目/意见/回复数据
+- `review_report.json/.md`：文档驱动复审结论
+- `split/manifest.json`：图框拆分页清单
+- `split/pages/*.png|*.svg|*.texts.json`：单页图像和文本证据
+- `整改问题清单.md/.json`：正式整改问题清单
 
 ## 输出示意图
 
@@ -103,6 +147,9 @@ flowchart TD
 ```text
 sparkflow audit
 sparkflow index
+sparkflow drawing-info
+sparkflow review-audit
+sparkflow review-pipeline
 sparkflow audit-dataset
 sparkflow dataset-report
 sparkflow rectification-checklist
@@ -185,6 +232,27 @@ python -X utf8 -m sparkflow ruleset-diff rulesets\\example rulesets\\stategrid_p
   --out out\\ruleset_diff
 ```
 
+### 7. 文档驱动复审与整改清单
+
+```powershell
+python -X utf8 -m sparkflow review-pipeline "docs\\项目图纸\\example.dwg" `
+  --review-dir "docs\\项目评审意见" `
+  --out out_review `
+  --project-code 030451DY26030001 `
+  --dwg-backend cli `
+  --dwg-converter "D:\\Program Files\\ODA\\ODAFileConverter 27.1.0\\ODAFileConverter.exe" `
+  --dxf-backend ascii `
+  --skip-sparkflow-audit
+```
+
+返回结果依次为：
+
+1. `run_dir`
+2. `整改问题清单.md`
+3. `整改问题清单.json`
+4. `split/manifest.json`
+5. `review_report.json`
+
 ## 典型输出目录
 
 `audit-dataset` 运行目录通常包含：
@@ -215,6 +283,7 @@ python -X utf8 -m sparkflow ruleset-diff rulesets\\example rulesets\\stategrid_p
 - [快速开始与命令示例](docs/quick-start.md)
 - [规则集与规则输入](docs/rulesets.md)
 - [报告与整改清单说明](docs/reports.md)
+- [文档驱动复审与整改清单流程](docs/review-pipeline.md)
 - [部署、环境与运维建议](docs/deployment.md)
 
 ## 仓库结构
@@ -246,7 +315,7 @@ docs/             使用与部署文档
 ## 相关规则集
 
 - [example](rulesets/example/ruleset.json)：默认示例规则集
-- [stategrid_peidian_strict](rulesets/stategrid_peidian_strict/ruleset.json)：将 `wire.floating_endpoints` 提升为严格判定的规则集
+- [stategrid_peidian_strict](rulesets/stategrid_peidian_strict/ruleset.json)：严格规则集目录名；当前 `ruleset.json` 内部 `version` 为 `stategrid_peidian_strict_v1`，用于将 `wire.floating_endpoints` 提升为严格判定
 - [example_table](rulesets/example_table/ruleset.json)：表格规则集示例
 - [example_xlsx](rulesets/example_xlsx/ruleset.json)：Excel 规则集示例
 - [example_normative](rulesets/example_normative/ruleset.json)：规范摘要规则集示例
