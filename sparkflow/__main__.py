@@ -15,6 +15,7 @@ from .reporting.rectification_checklist import write_rectification_checklist
 from .review import review_audit, write_drawing_info
 from .review_workflow import review_pipeline
 from .rules.diffing import write_ruleset_diff_artifacts
+from .server import run_server
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     drawing_info_cmd.add_argument('--dwg-timeout', type=float, default=None)
     drawing_info_cmd.add_argument('--topo-tol', type=float, default=1.0, help='连通图吸附容差（默认1.0）')
 
-    review_audit_cmd = sub.add_parser('review-audit', help='基于评审意见文档和图纸生成文档驱动复审报告')
+    review_audit_cmd = sub.add_parser('review-audit', help='基于评审意见目录生成评审规则审查报告')
     review_audit_cmd.add_argument('path', type=Path, help='DWG/DXF 文件路径')
     review_audit_cmd.add_argument('--review-dir', type=Path, required=True, help='评审意见目录')
     review_audit_cmd.add_argument('--out', type=Path, default=Path('out'), help='输出目录')
@@ -111,14 +112,14 @@ def main(argv: list[str] | None = None) -> int:
     review_audit_cmd.add_argument('--topo-tol', type=float, default=1.0, help='连通图吸附容差（默认1.0）')
     review_audit_cmd.add_argument('--selection', type=str, default='auto', help='筛图策略：auto 或 list=<manifest>')
     review_audit_cmd.add_argument('--graph', type=str, default='electrical', choices=['electrical'])
-    review_audit_cmd.add_argument('--skip-sparkflow-audit', action='store_true', help='跳过通用 SparkFlow 审图，仅输出文档驱动复审报告')
+    review_audit_cmd.add_argument('--skip-sparkflow-audit', action='store_true', help='跳过通用 SparkFlow 审图，仅输出评审规则审查报告')
     review_audit_cmd.add_argument('--wire-layer-include', action='append', default=None)
     review_audit_cmd.add_argument('--wire-layer-exclude', action='append', default=None)
     review_audit_cmd.add_argument('--wire-ltype-include', action='append', default=None)
     review_audit_cmd.add_argument('--wire-ltype-exclude', action='append', default=None)
     review_audit_cmd.add_argument('--wire-min-length', type=float, default=None)
 
-    review_pipeline_cmd = sub.add_parser('review-pipeline', help='执行 DWG/DXF 文档驱动复审、图框拆分并生成整改问题清单')
+    review_pipeline_cmd = sub.add_parser('review-pipeline', help='执行 DWG/DXF 评审规则审查、图框拆分并生成整改问题清单')
     review_pipeline_cmd.add_argument('path', type=Path, help='DWG/DXF 文件路径')
     review_pipeline_cmd.add_argument('--review-dir', type=Path, required=True, help='评审意见目录')
     review_pipeline_cmd.add_argument('--out', type=Path, default=Path('out'), help='输出目录')
@@ -132,12 +133,16 @@ def main(argv: list[str] | None = None) -> int:
     review_pipeline_cmd.add_argument('--topo-tol', type=float, default=1.0, help='连通图吸附容差（默认1.0）')
     review_pipeline_cmd.add_argument('--selection', type=str, default='auto', help='筛图策略：auto 或 list=<manifest>')
     review_pipeline_cmd.add_argument('--graph', type=str, default='electrical', choices=['electrical'])
-    review_pipeline_cmd.add_argument('--skip-sparkflow-audit', action='store_true', help='跳过通用 SparkFlow 审图，仅输出文档驱动复审、拆分和整改清单')
+    review_pipeline_cmd.add_argument('--skip-sparkflow-audit', action='store_true', help='跳过通用 SparkFlow 审图，仅输出评审规则审查、拆分和整改清单')
     review_pipeline_cmd.add_argument('--wire-layer-include', action='append', default=None)
     review_pipeline_cmd.add_argument('--wire-layer-exclude', action='append', default=None)
     review_pipeline_cmd.add_argument('--wire-ltype-include', action='append', default=None)
     review_pipeline_cmd.add_argument('--wire-ltype-exclude', action='append', default=None)
     review_pipeline_cmd.add_argument('--wire-min-length', type=float, default=None)
+
+    serve_cmd = sub.add_parser('serve', help='启动 REST API 审图服务')
+    serve_cmd.add_argument('--host', type=str, default='0.0.0.0', help='监听地址（默认 0.0.0.0）')
+    serve_cmd.add_argument('--port', type=int, default=8600, help='监听端口（默认 8600）')
 
     args = parser.parse_args(argv)
 
@@ -356,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(output.review_report_json_path))
         print(str(output.review_report_md_path))
         print(str(output.drawing_info_json_path))
-        print(str(output.review_bundle_json_path))
+        print(str(output.review_rules_json_path))
         if output.sparkflow_report_json_path is not None:
             print(str(output.sparkflow_report_json_path))
         if output.sparkflow_report_md_path is not None:
@@ -407,6 +412,10 @@ def main(argv: list[str] | None = None) -> int:
         print(str(output.rectification_checklist_json_path))
         print(str(output.split_manifest_json_path))
         print(str(output.review_report_json_path))
+        return 0
+
+    if args.cmd == 'serve':
+        run_server(host=args.host, port=args.port)
         return 0
 
     return 2
