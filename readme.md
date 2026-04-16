@@ -13,7 +13,7 @@ SparkFlow 是一个面向配电/一次系统图审查场景的 CAD 自动审图 
 
 - `DWG/DXF` 图纸审图
 - `drawing-info` 单图结构化信息提取
-- `review-audit` 结合评审意见目录生成文档驱动复审报告
+- `review-audit` 结合评审意见目录生成评审规则审查报告
 - `review-pipeline` 一次完成复审、按图框拆分、整改问题清单生成
 - `audit-dataset` 批量审图与筛图
 - `dataset-report` 数据集最终总报告
@@ -65,9 +65,11 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  U["用户 / 审图工程师"] --> CLI["CLI 命令层<br/>audit / drawing-info / review-audit / review-pipeline / audit-dataset / dataset-report / rectification-checklist / ruleset-diff"]
+  U1["用户 / 审图工程师"] --> CLI["CLI 命令层<br/>audit / drawing-info / review-audit / review-pipeline / audit-dataset / dataset-report / rectification-checklist / ruleset-diff"]
+  U2["HTTP 客户端 / 前端"] --> API["REST API 层<br/>POST /api/review-audit / /api/review-pipeline<br/>GET /api/health"]
   CLI --> CORE["核心流程层<br/>sparkflow/core.py"]
-  CLI --> REVIEW["复审流程层<br/>sparkflow/review.py / review_workflow.py"]
+  API --> REVIEW["复审流程层<br/>sparkflow/review.py / review_workflow.py"]
+  CLI --> REVIEW
   CLI --> RULESET["规则输入层<br/>JSON / CSV / TSV / XLSX / 规范摘要 Markdown"]
 
   CORE --> CAD["CAD 解析层<br/>sparkflow/cad"]
@@ -85,16 +87,17 @@ flowchart TB
   REPORT --> OUT1["单图产物<br/>report.json / report.md / report.docx"]
   REPORT --> OUT2["数据集产物<br/>dataset_summary / final_audit_report / rectification_checklist"]
   REVIEW --> OUT3["复审产物<br/>drawing_info / review_report / split manifest / 整改问题清单"]
+  REVIEW --> OUT4["API 响应<br/>JSON 格式报告内联返回"]
 ```
 
-## 文档驱动复审实现方案
+## 评审规则审查实现方案
 
-当前项目里已经把“输入一份 `DWG` + 一份评审意见目录，输出复审结果和整改清单”的链路收口成稳定接口：
+当前项目里已经把“输入一份 `DWG` + 一份评审意见目录，解析出项目专用评审规则，再对图纸执行审查并输出整改清单”的链路收口成稳定接口：
 
 | 层级 | 文件 | 责任 |
 | --- | --- | --- |
 | CLI 入口 | `sparkflow/__main__.py` | 暴露 `drawing-info`、`review-audit`、`review-pipeline` 三个命令 |
-| 图纸抽取 | `sparkflow/review.py` | 提取 `drawing_info.json`，加载 `评审意见` 目录，生成 `review_report` |
+| 图纸抽取 | `sparkflow/review.py` | 提取 `drawing_info.json`，加载 `评审意见` 目录并生成 `review_rules.json`，执行规则审查并输出 `review_report` |
 | 复审编排 | `sparkflow/review_workflow.py` | 复用 `review_audit()` 结果，执行图框拆分、单页文本提取、整改清单汇总 |
 | CAD 基础能力 | `sparkflow/cad/*` | `DWG -> DXF` 转换、`DXF` 解析、视口/图元基础读取 |
 | 结果输出 | `docs/review-pipeline.md` | 说明命令、Python API、产物结构和已知限制 |
@@ -104,13 +107,13 @@ flowchart TB
 ```mermaid
 flowchart LR
   A["输入<br/>DWG / DXF + 评审意见目录"] --> B["CLI / Python API<br/>review-pipeline()"]
-  B --> C["review_audit()<br/>drawing_info + review_bundle + review_report"]
+  B --> C["review_audit()<br/>drawing_info + review_rules + review_report"]
   C --> D["DWG 转 DXF<br/>复用 converted_dxf"]
   D --> E["Layout1 图框识别<br/>A3/A4 frame + viewport"]
   E --> F["单页拆分<br/>SVG / PNG / texts.json / manifest.json"]
-  C --> G["评审意见结果<br/>evidence_found / not_found / manual_required"]
+  C --> G["评审规则结果<br/>passed / failed / manual_review"]
   F --> H["逐页问题汇总<br/>placeholder / 暂命名 / 未定稿"]
-  G --> I["评审意见闭环汇总"]
+  G --> I["评审规则问题汇总"]
   H --> J["整改问题清单.md / .json"]
   I --> J
 ```
@@ -118,11 +121,22 @@ flowchart LR
 ### 典型输出
 
 - `drawing_info.json`：图纸结构化摘要、唯一文本、占位符文本
-- `review_bundle.json`：从 `评审意见` 目录抽取出的项目/意见/回复数据
-- `review_report.json/.md`：文档驱动复审结论
+- `review_rules.json`：从 `评审意见` 目录抽取出的项目/意见/回复与结构化评审规则
+- `review_report.json/.md`：基于评审规则的图纸审查结论
 - `split/manifest.json`：图框拆分页清单
 - `split/pages/*.png|*.svg|*.texts.json`：单页图像和文本证据
 - `整改问题清单.md/.json`：正式整改问题清单
+
+### 当前实测基线
+
+当前仓库这轮已经实际跑通、并作为基线保留的流程是：
+
+- 输入图纸：`docs\珠海金湾供电局2026年3月配网业扩配套项目--2项\评审前\030451DY26030001-南水供电所景旺电子（厂房一）10kV业扩配套工程\附件3 施工图\南水供电所景旺电子（厂房一）10kV业扩配套工程.dwg`
+- 评审意见目录：`docs\珠海金湾供电局2026年3月配网业扩配套项目--2项\评审意见`
+- 已验证输出：`tmp\review_pipeline_030451DY26030001_docdriven\20260415T070348Z`
+- 已迁移测试夹具：`tests/fixtures/review_baseline/030451DY26030001/fixture.json`
+
+后续优先以这条 `review-pipeline` 真实链路为准，不再把早期 `image/` 历史样例数据集当成当前主流程基线。
 
 ## 输出示意图
 
@@ -154,7 +168,28 @@ sparkflow audit-dataset
 sparkflow dataset-report
 sparkflow rectification-checklist
 sparkflow ruleset-diff
+sparkflow serve
 ```
+
+### REST API 服务
+
+自 `v0.2.0` 起支持 **HTTP REST API 接口**，可通过 POST 请求提交评审意见文件路径和图纸设计文件路径，自动执行审图核查并返回结果。
+
+**启动服务：**
+
+```powershell
+python -X utf8 -m sparkflow serve --port 8600
+```
+
+**API 端点：**
+
+| 方法 | 端点 | 功能 |
+|------|------|------|
+| `GET` | `/api/health` | 健康检查 |
+| `POST` | `/api/review-audit` | 评审规则审查 |
+| `POST` | `/api/review-pipeline` | 完整复审流程（含图框拆分 + 整改清单） |
+
+详见 [REST API 接口说明](docs/rest-api.md)
 
 ## 快速开始
 
@@ -193,7 +228,7 @@ python -X utf8 -m sparkflow --help
 ### 2. 单图审图
 
 ```powershell
-python -X utf8 -m sparkflow audit "image\\111\\配电部分CAD\\低压开关柜DK-1\\380V.dwg" `
+python -X utf8 -m sparkflow audit "D:\\path\\drawing.dwg" `
   --out out `
   --ruleset rulesets\\example `
   --dwg-backend cli `
@@ -203,7 +238,7 @@ python -X utf8 -m sparkflow audit "image\\111\\配电部分CAD\\低压开关柜D
 ### 3. 数据集批量审图
 
 ```powershell
-python -X utf8 -m sparkflow audit-dataset "image\\111\\配电部分CAD" `
+python -X utf8 -m sparkflow audit-dataset "D:\\path\\dataset_root" `
   --out out_oda_dataset `
   --ruleset rulesets\\example `
   --dwg-backend cli `
@@ -232,12 +267,13 @@ python -X utf8 -m sparkflow ruleset-diff rulesets\\example rulesets\\stategrid_p
   --out out\\ruleset_diff
 ```
 
-### 7. 文档驱动复审与整改清单
+### 7. 评审规则审查与整改清单
 
 ```powershell
-python -X utf8 -m sparkflow review-pipeline "docs\\项目图纸\\example.dwg" `
-  --review-dir "docs\\项目评审意见" `
-  --out out_review `
+python -X utf8 -m sparkflow review-pipeline `
+  "docs\\珠海金湾供电局2026年3月配网业扩配套项目--2项\\评审前\\030451DY26030001-南水供电所景旺电子（厂房一）10kV业扩配套工程\\附件3 施工图\\南水供电所景旺电子（厂房一）10kV业扩配套工程.dwg" `
+  --review-dir "docs\\珠海金湾供电局2026年3月配网业扩配套项目--2项\\评审意见" `
+  --out "tmp\\review_pipeline_030451DY26030001_docdriven" `
   --project-code 030451DY26030001 `
   --dwg-backend cli `
   --dwg-converter "D:\\Program Files\\ODA\\ODAFileConverter 27.1.0\\ODAFileConverter.exe" `
@@ -281,22 +317,34 @@ python -X utf8 -m sparkflow review-pipeline "docs\\项目图纸\\example.dwg" `
 
 - [项目概览与架构](docs/architecture.md)
 - [快速开始与命令示例](docs/quick-start.md)
+- [REST API 接口说明](docs/rest-api.md)
 - [规则集与规则输入](docs/rulesets.md)
 - [报告与整改清单说明](docs/reports.md)
-- [文档驱动复审与整改清单流程](docs/review-pipeline.md)
+- [评审规则审查与整改清单流程](docs/review-pipeline.md)
 - [部署、环境与运维建议](docs/deployment.md)
 
 ## 仓库结构
 
 ```text
 sparkflow/        核心源码
-rulesets/         示例规则集、严格规则集、表格/XLSX/规范摘要示例
-catalog/          设备模板、导线过滤配置
-scripts/          辅助脚本
-tests/            测试
-image/            样例图纸
-docs/             使用与部署文档
+rulesets/         当前规则集输入：示例规则、严格规则、表格/XLSX/规范摘要示例
+catalog/          当前运行期模型配置：设备模板、导线过滤配置
+scripts/          辅助/排障脚本，不属于 review-pipeline 对外接口
+tests/            回归测试与 CLI 验证
+image/            历史本地样例数据集，不是当前 review-pipeline 基线输入
+docs/             使用文档 + 当前实测项目图纸/评审意见
 ```
+
+## 目录是否参与当前流程
+
+| 目录 | 当前是否直接参与主流程 | 作用 |
+| --- | --- | --- |
+| `rulesets/` | 是 | CLI 和测试会直接加载规则集目录 |
+| `catalog/` | 是 | 默认设备模板和导线过滤配置的权威来源 |
+| `scripts/` | 部分 | 仅保留通用辅助脚本；不再把硬编码旧样例路径的脚本视为主流程入口 |
+| `tests/` | 是 | 当前接口、规则集、报告产物都靠这里回归验证 |
+| `image/` | 否 | 历史本地样例数据，不是当前 `030451DY26030001` 复审基线 |
+| `docs/` | 是 | 同时承载产品文档和本轮真实评审输入资料 |
 
 ## 现在适合用它做什么
 

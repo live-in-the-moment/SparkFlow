@@ -113,16 +113,19 @@ flowchart TB
 
 ### 3.1 入口
 
-- [`sparkflow/__main__.py`](../sparkflow/__main__.py)
+- [`sparkflow/__main__.py`](../sparkflow/__main__.py) — CLI 入口
+- [`sparkflow/server.py`](../sparkflow/server.py) — REST API 服务入口
 
 负责：
 
-- CLI 参数解析
+- CLI 参数解析与命令分发
+- REST API 端点处理与请求校验
 - `audit`
 - `audit-dataset`
 - `dataset-report`
 - `rectification-checklist`
 - `ruleset-diff`
+- `serve` — 启动 HTTP API 服务
 
 ### 3.2 核心审图流程
 
@@ -212,9 +215,39 @@ flowchart TB
 
 ## 6. 当前边界
 
+当前项目支持两种调用方式：
+
+### 6.1 CLI 模式（命令行）
+
+- 直接运行 `sparkflow audit|review-pipeline|...` 命令
+- 适合：脚本化处理、CI/CD 集成、本地批处理
+
+### 6.2 REST API 模式（新增 v0.2.0+）
+
+- 启动 `sparkflow serve` 服务后通过 HTTP POST 提交请求
+- 支持 `/api/review-audit` 和 `/api/review-pipeline` 两个端点
+- 返回 JSON 格式结果，报告内容内联返回
+- 适合：Web 前端集成、跨进程调用、多种编程语言客户端
+
+详见 [REST API 接口说明](rest-api.md)
+
+### 6.3 Python API 模式（现有）
+
+直接导入模块调用核心函数：
+
+```python
+from sparkflow.review_workflow import review_pipeline
+
+output = review_pipeline(
+    drawing_path,
+    review_dir,
+    out_dir,
+    project_code="PRJ001"
+)
+```
+
 当前项目仍是 CLI-first 工具链，不是完整平台：
 
-- 没有 Web 服务入口
 - 没有任务队列/数据库/用户系统
 - 没有人工复核流转界面
 - 没有自然语言规则自动抽取成生产级规则
@@ -225,6 +258,7 @@ flowchart TB
 - 审图报告归档
 - 规则回归和版本对比
 - 坐标级整改清单生成
+- Web 前端与第三方系统集成
 
 ## 7. 使用视角示意图
 
