@@ -118,6 +118,13 @@ def main(argv: list[str] | None = None) -> int:
     review_audit_cmd.add_argument('--wire-ltype-include', action='append', default=None)
     review_audit_cmd.add_argument('--wire-ltype-exclude', action='append', default=None)
     review_audit_cmd.add_argument('--wire-min-length', type=float, default=None)
+    review_audit_cmd.add_argument(
+        '--rule-refine',
+        type=str,
+        default='heuristic',
+        choices=['off', 'heuristic', 'llm'],
+        help='评审规则二次判别模式（默认 heuristic）',
+    )
 
     review_pipeline_cmd = sub.add_parser('review-pipeline', help='执行 DWG/DXF 评审规则审查、图框拆分并生成整改问题清单')
     review_pipeline_cmd.add_argument('path', type=Path, help='DWG/DXF 文件路径')
@@ -134,6 +141,13 @@ def main(argv: list[str] | None = None) -> int:
     review_pipeline_cmd.add_argument('--selection', type=str, default='auto', help='筛图策略：auto 或 list=<manifest>')
     review_pipeline_cmd.add_argument('--graph', type=str, default='electrical', choices=['electrical'])
     review_pipeline_cmd.add_argument('--skip-sparkflow-audit', action='store_true', help='跳过通用 SparkFlow 审图，仅输出评审规则审查、拆分和整改清单')
+    review_pipeline_cmd.add_argument(
+        '--rule-refine',
+        type=str,
+        default='heuristic',
+        choices=['off', 'heuristic', 'llm'],
+        help='评审规则二次判别模式（默认 heuristic）',
+    )
     review_pipeline_cmd.add_argument('--wire-layer-include', action='append', default=None)
     review_pipeline_cmd.add_argument('--wire-layer-exclude', action='append', default=None)
     review_pipeline_cmd.add_argument('--wire-ltype-include', action='append', default=None)
@@ -341,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
                 selection_mode=args.selection,
                 graph=args.graph,
                 include_sparkflow_audit=not bool(args.skip_sparkflow_audit),
+                rule_refine_mode=args.rule_refine,
             )
         except FileNotFoundError:
             print('文件或评审意见目录不存在。', file=sys.stderr)
@@ -391,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
                 selection_mode=args.selection,
                 graph=args.graph,
                 include_sparkflow_audit=not bool(args.skip_sparkflow_audit),
+                rule_refine_mode=args.rule_refine,
             )
         except FileNotFoundError:
             print('文件或评审意见目录不存在。', file=sys.stderr)
