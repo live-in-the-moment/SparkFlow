@@ -761,7 +761,7 @@ def _recognize_insert_device(
     normalized_block = block_name.strip() if isinstance(block_name, str) and block_name.strip() else None
     attribs = entity.props.get('insert_attribs')
     attrib_map = attribs if isinstance(attribs, dict) else {}
-    label = _nearest_text_label(point, texts)
+    label_text_id, label = _nearest_text_label(point, texts)
 
     template = _match_block_template(normalized_block, attrib_map, device_templates)
     if template is None and label:
@@ -779,6 +779,7 @@ def _recognize_insert_device(
     if template is not None and label:
         label = _normalize_device_label(label, template.device_type)
 
+    source_entity_ids = (entity.entity_id,) if label_text_id is None else (entity.entity_id, label_text_id)
     terminals = ()
     if normalized_block and template.terminals:
         terminals = _build_terminals_from_template(
@@ -786,7 +787,7 @@ def _recognize_insert_device(
             center=point,
             entity=entity,
             template=template,
-            source_entity_ids=(entity.entity_id,),
+            source_entity_ids=source_entity_ids,
         )
     if not terminals:
         terminals = _infer_terminals_near_point(
@@ -794,7 +795,7 @@ def _recognize_insert_device(
             center=point,
             wires=wires,
             template=template,
-            source_entity_ids=(entity.entity_id,),
+            source_entity_ids=source_entity_ids,
             rotation_deg=_float_prop(entity, 'gc_50') or 0.0,
             scale_x=_float_prop(entity, 'gc_41') or 1.0,
             scale_y=_float_prop(entity, 'gc_42') or 1.0,
@@ -823,7 +824,7 @@ def _recognize_insert_device(
             device_type=template.device_type,
             terminals=terminals,
             block_name=normalized_block,
-            source_entity_ids=(entity.entity_id,),
+            source_entity_ids=source_entity_ids,
             footprint_radius=template.footprint_radius,
         ),
         [],
@@ -1445,10 +1446,10 @@ def _nearest_text_label(
     center: Point2D,
     texts: list[tuple[str, Point2D, str]],
     radius: float = 30.0,
-) -> str | None:
-    best: tuple[float, str] | None = None
+) -> tuple[str | None, str | None]:
+    best: tuple[float, str, str] | None = None
     max_d2 = radius * radius
-    for _, point, text in texts:
+    for text_id, point, text in texts:
         normalized = _normalize_text(text)
         if (
             not normalized
@@ -1461,8 +1462,10 @@ def _nearest_text_label(
         if current > max_d2:
             continue
         if best is None or current < best[0]:
-            best = (current, normalized)
-    return best[1] if best is not None else None
+            best = (current, text_id, normalized)
+    if best is None:
+        return None, None
+    return best[1], best[2]
 
 
 def _surrounding_text_count(center: Point2D, texts: list[tuple[str, Point2D, str]], radius: float) -> int:

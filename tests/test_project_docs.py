@@ -8,7 +8,8 @@ from unittest.mock import patch
 from docx import Document
 from openpyxl import Workbook
 
-from sparkflow.project_docs import build_project_document_context, project_document_note_exists
+from sparkflow.model.types import ProjectDocumentContext
+from sparkflow.project_docs import build_project_document_context, project_document_mentions, project_document_note_exists
 
 
 class ProjectDocumentContextTests(unittest.TestCase):
@@ -58,6 +59,34 @@ class ProjectDocumentContextTests(unittest.TestCase):
             self.assertTrue(project_document_note_exists(context, "secondary_cabinet"))
             self.assertEqual(len(context.sources), 3)
             self.assertEqual(context.errors, ())
+
+    def test_project_document_mentions_zero_count_matrix(self) -> None:
+        zero_only = ProjectDocumentContext(project_root="D:/project", expected_counts={"secondary_cabinet": 0.0})
+        self.assertFalse(project_document_mentions(zero_only, "secondary_cabinet"))
+
+        positive = ProjectDocumentContext(project_root="D:/project", expected_counts={"secondary_cabinet": 2.0})
+        self.assertTrue(project_document_mentions(positive, "secondary_cabinet"))
+
+        text_only = ProjectDocumentContext(
+            project_root="D:/project",
+            expected_counts={"secondary_cabinet": 0.0},
+            text_snippets=("二次柜安装位置详见平面布置图。",),
+        )
+        self.assertTrue(project_document_mentions(text_only, "secondary_cabinet"))
+
+        zero_qty_table_row = ProjectDocumentContext(
+            project_root="D:/project",
+            expected_counts={"secondary_cabinet": 0.0},
+            text_snippets=("二次柜 | 0 | 台",),
+        )
+        self.assertFalse(project_document_mentions(zero_qty_table_row, "secondary_cabinet"))
+
+        zero_qty_with_model_code = ProjectDocumentContext(
+            project_root="D:/project",
+            expected_counts={"secondary_cabinet": 0.0},
+            text_snippets=("二次柜 | DK-1 | 0 | 台",),
+        )
+        self.assertFalse(project_document_mentions(zero_qty_with_model_code, "secondary_cabinet"))
 
 
 def _write_docx(path: Path, *, rows: tuple[tuple[str, ...], ...], extra_paragraphs: tuple[str, ...] = ()) -> None:

@@ -10,6 +10,8 @@ from docx import Document
 from openpyxl import Workbook
 
 from sparkflow.core import audit_file
+from sparkflow.model.types import Device, Point2D, ProjectDocumentContext, SystemModel
+from sparkflow.rules.project_rules import _count_drawing_occurrences
 
 
 class DocumentBackedRuleTests(unittest.TestCase):
@@ -63,6 +65,74 @@ class DocumentBackedRuleTests(unittest.TestCase):
             self.assertIn("project.secondary_cabinet.missing_quantity_note", issue_ids)
             self.assertFalse(report["passed"])
             self.assertTrue(report["summary"]["project_documents"]["enabled"])
+
+    def test_distribution_transformer_count_excludes_ct_transformers(self) -> None:
+        model = SystemModel(
+            devices=(
+                Device(
+                    id="dev-ct",
+                    position=Point2D(0.0, 0.0),
+                    label="TA1",
+                    device_type="transformer",
+                    source_entity_ids=("text:ct",),
+                ),
+            ),
+            texts=(
+                ("text:ct", Point2D(0.0, 0.0), "电流互感器"),
+            ),
+            project_documents=ProjectDocumentContext(
+                project_root="D:/project",
+                expected_counts={"distribution_transformer": 1.0},
+            ),
+        )
+
+        self.assertEqual(_count_drawing_occurrences(model, "distribution_transformer"), 0)
+
+    def test_distribution_transformer_count_avoids_double_counting_true_overlap(self) -> None:
+        model = SystemModel(
+            devices=(
+                Device(
+                    id="dev-transformer",
+                    position=Point2D(0.0, 0.0),
+                    label="1#公用台变",
+                    device_type="transformer",
+                    source_entity_ids=("insert:1", "text:merged"),
+                ),
+            ),
+            texts=(
+                ("text:merged", Point2D(0.0, 0.0), "公用台变"),
+                ("text:separate", Point2D(20.0, 0.0), "黄沙公用台变"),
+            ),
+            project_documents=ProjectDocumentContext(
+                project_root="D:/project",
+                expected_counts={"distribution_transformer": 2.0},
+            ),
+        )
+
+        self.assertEqual(_count_drawing_occurrences(model, "distribution_transformer"), 2)
+
+    def test_distribution_transformer_count_does_not_double_count_insert_backed_label_text(self) -> None:
+        model = SystemModel(
+            devices=(
+                Device(
+                    id="dev-insert-transformer",
+                    position=Point2D(0.0, 0.0),
+                    label="黄沙公用台变",
+                    block_name="TR-01",
+                    device_type="transformer",
+                    source_entity_ids=("insert:1",),
+                ),
+            ),
+            texts=(
+                ("text:label", Point2D(1.0, 0.0), "黄沙公用台变"),
+            ),
+            project_documents=ProjectDocumentContext(
+                project_root="D:/project",
+                expected_counts={"distribution_transformer": 1.0},
+            ),
+        )
+
+        self.assertEqual(_count_drawing_occurrences(model, "distribution_transformer"), 1)
 
 
 def _write_docx(path: Path, *, rows: tuple[tuple[str, ...], ...]) -> None:

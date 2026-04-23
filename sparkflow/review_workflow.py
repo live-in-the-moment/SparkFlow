@@ -955,10 +955,10 @@ def _match_related_pages(item: dict[str, Any], manifest: list[dict[str, Any]]) -
 
 
 def _page_index_label(page: dict[str, Any]) -> str:
-    value = page.get("page_seq")
+    value = page.get("sheet_no")
     if isinstance(value, int):
         return str(value)
-    value = page.get("sheet_no")
+    value = page.get("page_seq")
     if isinstance(value, int):
         return str(value)
     return "-"

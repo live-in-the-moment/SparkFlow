@@ -15,7 +15,7 @@ import ezdxf
 from sparkflow.__main__ import main
 from sparkflow.cad.parse import CadParseOptions
 from sparkflow.review import _load_technical_point_rules, load_review_rules, review_audit
-from sparkflow.review_workflow import review_pipeline, split_review_pages
+from sparkflow.review_workflow import build_rectification_checklist, review_pipeline, split_review_pages
 
 
 class ReviewFlowTests(unittest.TestCase):
@@ -425,6 +425,54 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertTrue(Path(lines[2]).exists())
             self.assertTrue(Path(lines[3]).exists())
             self.assertEqual(stderr.getvalue(), "")
+
+    def test_rectification_checklist_labels_prefer_sheet_no_then_page_seq(self) -> None:
+        checklist = build_rectification_checklist(
+            {
+                "project_code": "P1",
+                "project_name": "工程A",
+                "input_path": "drawing.dxf",
+                "review_dir": "review",
+                "summary": {},
+                "review_rule_results": [
+                    {
+                        "rule_id": "technical.1",
+                        "result": "failed",
+                        "source_text": "补充10kV线路走向示意图",
+                        "keywords": ["线路走向示意图", "系统图"],
+                        "reply": "",
+                        "explanation": "missing",
+                    }
+                ],
+            },
+            [
+                {
+                    "sheet_no": 8,
+                    "page_seq": 1,
+                    "title": "10kV线路走向示意图",
+                    "codes": ["47-ABC-08"],
+                    "primary_code": "47-ABC-08",
+                    "placeholder_texts": ["FXX"],
+                    "texts_path": "page8.texts.json",
+                    "png_path": "page8.png",
+                    "svg_path": "page8.svg",
+                },
+                {
+                    "sheet_no": None,
+                    "page_seq": 2,
+                    "title": "系统图（续页）",
+                    "codes": ["47-ABC-D01"],
+                    "primary_code": "47-ABC-D01",
+                    "placeholder_texts": [],
+                    "texts_path": "page2.texts.json",
+                    "png_path": "page2.png",
+                    "svg_path": "page2.svg",
+                },
+            ],
+        )
+
+        self.assertEqual(checklist["page_issues"][0]["page_label"], "8 10kV线路走向示意图")
+        self.assertEqual(checklist["review_issues"][0]["related_pages"], ["8 10kV线路走向示意图", "2 系统图（续页）"])
 
     def test_split_review_pages_supports_qingneng_frame_names(self) -> None:
         with tempfile.TemporaryDirectory() as td:

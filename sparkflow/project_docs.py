@@ -164,12 +164,12 @@ def project_document_note_exists(context: ProjectDocumentContext | None, key: st
 def project_document_mentions(context: ProjectDocumentContext | None, key: str) -> bool:
     if context is None:
         return False
-    if key in context.expected_counts:
+    if context.expected_counts.get(key, 0) > 0:
         return True
     spec = _SPEC_BY_KEY.get(key)
     if spec is None:
         return False
-    return any(any(alias in _normalize_text(snippet) for alias in spec.aliases) for snippet in context.text_snippets)
+    return any(_snippet_mentions_object(snippet, spec.aliases) for snippet in context.text_snippets)
 
 
 def project_document_display_name(key: str) -> str:
@@ -269,6 +269,31 @@ def _extract_xls(path: Path) -> tuple[list[ProjectDocumentFact], list[str]]:
         facts = _extract_xlsx_exact_facts(rows, source_path=path, source_kind="xls")
     snippets = [" | ".join(cell for cell in row if cell) for row in rows if any(cell for cell in row)]
     return facts, snippets
+
+
+def _snippet_mentions_object(snippet: str, aliases: tuple[str, ...]) -> bool:
+    normalized = _normalize_text(snippet)
+    if not any(alias in normalized for alias in aliases):
+        return False
+    if "|" not in snippet:
+        return True
+    numeric_values = [_parse_pure_numeric_cell(cell) for cell in snippet.split("|")]
+    numbers = [value for value in numeric_values if value is not None]
+    if numbers and all(value == 0 for value in numbers):
+        return False
+    return True
+
+
+def _parse_pure_numeric_cell(cell: str) -> float | None:
+    normalized = _normalize_space(cell).replace(",", "")
+    if not normalized:
+        return None
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?", normalized):
+        return None
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
 
 
 def _extract_docx_scale_facts(rows: Iterable[Iterable[str]], *, source_path: Path) -> list[ProjectDocumentFact]:

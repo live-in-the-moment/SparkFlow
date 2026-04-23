@@ -4,9 +4,12 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from sparkflow.model.build_options import (
+    builtin_device_templates,
     default_model_build_options,
+    default_terminal_templates,
     load_catalog_model_build_options,
     merge_model_build_options,
     model_build_options_from_dict,
@@ -130,6 +133,21 @@ class ModelBuildOptionsTests(unittest.TestCase):
             assert loaded.wire_filter is not None
             self.assertEqual(loaded.wire_filter.min_length, 0.25)
             self.assertEqual(tuple(item.block_name for item in loaded.device_templates), ('BKR*',))
+
+    def test_embedded_device_template_fallback_stays_in_parity_with_repo_catalog(self) -> None:
+        catalog_payload = json.loads(
+            (Path(__file__).resolve().parents[1] / "catalog" / "device_templates.json").read_text(encoding="utf-8-sig")
+        )
+        expected = model_build_options_from_dict(catalog_payload)
+
+        with patch("sparkflow.model.build_options.load_catalog_model_build_options", return_value=None):
+            fallback_devices = builtin_device_templates()
+            fallback_terminals = default_terminal_templates()
+
+        self.assertTrue(fallback_devices)
+        self.assertTrue(fallback_terminals)
+        self.assertEqual(fallback_devices, expected.device_templates)
+        self.assertEqual(fallback_terminals, expected.terminal_templates)
 
 
 if __name__ == '__main__':
