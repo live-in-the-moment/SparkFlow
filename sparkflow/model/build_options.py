@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+_CATALOG_FILENAMES = ('wire_filter.json', 'device_templates.json')
+
 
 @dataclass(frozen=True)
 class WireFilter:
@@ -62,178 +64,10 @@ class ModelBuildOptions:
 
 
 def builtin_device_templates() -> tuple[DeviceTemplate, ...]:
-    return (
-        DeviceTemplate(
-            device_type='breaker',
-            block_name='BKR*',
-            match_mode='glob',
-            text_keywords=('断路器', '隔离开关', '熔断器式隔离开关', '负荷开关', '自动空气开关', '复合开关'),
-            label_globs=('*QF*', '*QS*'),
-            terminals=(
-                TerminalDef(name='line_in', x=-10.0, y=0.0),
-                TerminalDef(name='line_out', x=10.0, y=0.0),
-            ),
-            footprint_radius=18.0,
-            min_terminals=2,
-            max_terminals=2,
-            text_group_radius=8.0,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='breaker',
-            block_name='BREAKER*',
-            match_mode='glob',
-            terminals=(
-                TerminalDef(name='line_in', x=-10.0, y=0.0),
-                TerminalDef(name='line_out', x=10.0, y=0.0),
-            ),
-            footprint_radius=18.0,
-            min_terminals=2,
-            max_terminals=2,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='breaker',
-            block_name='A$C22066BF2',
-            match_mode='equals',
-            label_globs=('*QF*', '*QS*'),
-            footprint_radius=18.0,
-            min_terminals=2,
-            max_terminals=2,
-            text_group_radius=6.0,
-            terminal_layout='vertical',
-        ),
-        DeviceTemplate(
-            device_type='transformer',
-            block_name='TR*',
-            match_mode='glob',
-            text_keywords=('变压器', '主变', '电流互感器'),
-            label_globs=('TA*',),
-            terminals=(
-                TerminalDef(name='hv', x=-12.0, y=0.0),
-                TerminalDef(name='lv', x=12.0, y=0.0),
-            ),
-            footprint_radius=24.0,
-            min_terminals=2,
-            max_terminals=2,
-            text_group_radius=10.0,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='transformer',
-            block_name='TRANS*',
-            match_mode='glob',
-            terminals=(
-                TerminalDef(name='hv', x=-12.0, y=0.0),
-                TerminalDef(name='lv', x=12.0, y=0.0),
-            ),
-            footprint_radius=24.0,
-            min_terminals=2,
-            max_terminals=2,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='transformer',
-            block_name='A$C3A3E583B',
-            match_mode='equals',
-            label_globs=('TA*',),
-            footprint_radius=16.0,
-            min_terminals=2,
-            max_terminals=2,
-            text_group_radius=6.0,
-            terminal_layout='vertical',
-        ),
-        DeviceTemplate(
-            device_type='switchgear_unit',
-            block_name='DK*',
-            match_mode='glob',
-            text_keywords=('开关柜', '进线柜', '出线柜', '联络柜', '进线总柜'),
-            label_globs=('DK*', '*DK*'),
-            terminals=(
-                TerminalDef(name='left', x=-12.0, y=0.0),
-                TerminalDef(name='right', x=12.0, y=0.0),
-            ),
-            footprint_radius=26.0,
-            min_terminals=2,
-            max_terminals=4,
-            text_group_radius=12.0,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='switchgear_unit',
-            block_name='DP*',
-            match_mode='glob',
-            text_keywords=('配电箱', '综合配电箱', '低压柜'),
-            label_globs=('DP*', '*DP*'),
-            terminals=(
-                TerminalDef(name='left', x=-12.0, y=0.0),
-                TerminalDef(name='right', x=12.0, y=0.0),
-            ),
-            footprint_radius=26.0,
-            min_terminals=2,
-            max_terminals=4,
-            text_group_radius=12.0,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='switchgear_unit',
-            text_keywords=('进线单元', '出线单元', '计量单元', '无功补偿单元', '进线总柜', '联络柜', '出线柜', '电容器柜'),
-            terminals=(
-                TerminalDef(name='line_in', x=-12.0, y=0.0),
-                TerminalDef(name='line_out', x=12.0, y=0.0),
-            ),
-            footprint_radius=24.0,
-            min_terminals=2,
-            max_terminals=4,
-            text_group_radius=12.0,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='cable_branch_box',
-            block_name='DF*',
-            match_mode='glob',
-            text_keywords=('电缆分支箱', '分支箱'),
-            label_globs=('DF*', '*DF*'),
-            terminals=(
-                TerminalDef(name='feed', x=-14.0, y=0.0),
-                TerminalDef(name='branch_a', x=14.0, y=8.0),
-                TerminalDef(name='branch_b', x=14.0, y=-8.0),
-                TerminalDef(name='branch_c', x=14.0, y=16.0),
-            ),
-            footprint_radius=28.0,
-            min_terminals=2,
-            max_terminals=4,
-            text_group_radius=12.0,
-        ),
-        DeviceTemplate(
-            device_type='busbar',
-            text_keywords=('母线',),
-            footprint_radius=36.0,
-            min_terminals=2,
-            max_terminals=8,
-            text_group_radius=12.0,
-            terminal_layout='horizontal',
-        ),
-        DeviceTemplate(
-            device_type='feeder',
-            text_keywords=('电缆进线', '电缆出线', '进线回路', '出线回路', '进线侧', '出线侧', '进线', '出线', '馈线'),
-            terminals=(TerminalDef(name='line', x=0.0, y=0.0),),
-            footprint_radius=18.0,
-            min_terminals=1,
-            max_terminals=1,
-            text_group_radius=8.0,
-        ),
-        DeviceTemplate(
-            device_type='load',
-            text_keywords=('所用电', '负荷', '用户', 'SPD', '浪涌保护器', '避雷器', '电容器', '电能表', '集中器', '配电智能终端', '低压避雷器', '回路状态', '巡检仪', '智能电容补偿', '无功补偿控制器'),
-            label_globs=('SPD*', 'BK*', 'C[0-9]*', 'FB*'),
-            terminals=(TerminalDef(name='load', x=0.0, y=0.0),),
-            footprint_radius=18.0,
-            min_terminals=1,
-            max_terminals=1,
-            text_group_radius=8.0,
-        ),
-    )
+    catalog = load_catalog_model_build_options()
+    if catalog is not None and catalog.device_templates:
+        return catalog.device_templates
+    return ()
 
 
 def default_terminal_templates() -> tuple[TerminalTemplate, ...]:
@@ -265,11 +99,17 @@ def default_model_build_options() -> ModelBuildOptions:
             text_density_threshold=5,
             text_dense_max_length=120.0,
         ),
-        terminal_templates=default_terminal_templates(),
-        device_templates=builtin_device_templates(),
     )
     catalog = load_catalog_model_build_options()
-    return merge_model_build_options(fallback, catalog) or fallback
+    merged = merge_model_build_options(fallback, catalog) or fallback
+    if merged.device_templates and not merged.terminal_templates:
+        synthesized = _terminal_templates_from_device_templates(merged.device_templates)
+        merged = ModelBuildOptions(
+            wire_filter=merged.wire_filter,
+            terminal_templates=synthesized,
+            device_templates=merged.device_templates,
+        )
+    return merged
 
 
 def load_catalog_model_build_options(catalog_dir: Path | None = None) -> ModelBuildOptions | None:
@@ -277,9 +117,12 @@ def load_catalog_model_build_options(catalog_dir: Path | None = None) -> ModelBu
     if not root.exists() or not root.is_dir():
         return None
     merged: ModelBuildOptions | None = None
-    for path in sorted(root.glob('*.json')):
+    for name in _CATALOG_FILENAMES:
+        path = root / name
+        if not path.exists() or not path.is_file():
+            continue
         try:
-            payload = json.loads(path.read_text(encoding='utf-8'))
+            payload = json.loads(path.read_text(encoding='utf-8-sig'))
         except (OSError, json.JSONDecodeError):
             continue
         options = model_build_options_from_dict(payload)

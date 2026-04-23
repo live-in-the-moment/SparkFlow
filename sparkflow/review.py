@@ -13,6 +13,7 @@ from typing import Any
 from .cad.parse import CadParseOptions, parse_cad
 from .core import audit_file
 from .model.build_options import ModelBuildOptions
+from .project_docs import _read_xls_rows_via_excel
 from .util import sha256_file
 
 _XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -63,11 +64,15 @@ _MANUAL_ONLY_HINTS = (
 class ReviewAuditOutput:
     run_dir: Path
     drawing_info_json_path: Path
-    review_bundle_json_path: Path
+    review_rules_json_path: Path
     review_report_json_path: Path
     review_report_md_path: Path
     sparkflow_report_json_path: Path | None
     sparkflow_report_md_path: Path | None
+
+    @property
+    def review_bundle_json_path(self) -> Path:
+        return self.review_rules_json_path
 
 
 def extract_drawing_info(path: Path, *, parse_options: CadParseOptions | None = None) -> dict[str, Any]:
@@ -123,60 +128,83 @@ def write_drawing_info(
     return out_path
 
 
-def load_review_bundle(review_dir: Path, *, project_code: str | None = None) -> dict[str, Any]:
+def load_review_rules(
+    review_dir: Path,
+    *,
+    project_code: str | None = None,
+    project_name: str | None = None,
+) -> dict[str, Any]:
     review_dir = review_dir.resolve()
     if not review_dir.exists():
         raise FileNotFoundError(str(review_dir))
     if not review_dir.is_dir():
         raise NotADirectoryError(str(review_dir))
 
+    review_dir = _resolve_review_dir(review_dir)
     discovered = _discover_review_files(review_dir)
     major_issues_path = discovered.get("major_issues")
     summary_path = discovered.get("summary")
-    if major_issues_path is None:
-        raise FileNotFoundError("评审意见目录中未找到“主要问题统计表”XLSX。")
-
     resolved_project_code = (project_code or "").strip()
-    if not resolved_project_code:
-        raise ValueError("缺少 project_code，无法从评审意见目录中定位项目。")
+    resolved_project_name = _normalize_space(project_name or "")
+    technical_points_excels = discovered.get("technical_points_excels", ())
+    if major_issues_path is None and not technical_points_excels:
+        raise FileNotFoundError("评审意见目录中未找到“主要问题统计表”XLSX，也未找到评审技术要点 Excel。")
 
-    major_row = _load_project_row(
-        major_issues_path,
-        project_code=resolved_project_code,
-        preferred_sheet_keyword="主要问题统计表",
-    )
+    major_row = None
+    if major_issues_path is not None:
+        major_row = _resolve_project_row(
+            major_issues_path,
+            project_code=resolved_project_code,
+            project_name=resolved_project_name,
+            preferred_sheet_keyword="主要问题统计表",
+        )
+        resolved_project_code = resolved_project_code or _project_code_from_row(major_row)
+        resolved_project_name = resolved_project_name or _project_name_from_major_row(major_row, project_code=resolved_project_code)
+
     summary_row = None
     if summary_path is not None:
-        summary_row = _load_project_row(
+        summary_row = _resolve_project_row(
             summary_path,
             project_code=resolved_project_code,
+            project_name=resolved_project_name,
             preferred_sheet_keyword="评审情况明细表",
             allow_missing=True,
         )
+        resolved_project_code = resolved_project_code or _project_code_from_row(summary_row)
 
-    project_name = _cell(major_row, 2)
-    bundle = {
+    if not resolved_project_name and len(technical_points_excels) == 1:
+        resolved_project_name = _infer_project_name(technical_points_excels[0])
+    if not resolved_project_name:
+        resolved_project_name = _project_name_from_major_row(summary_row, project_code=resolved_project_code)
+    if not resolved_project_code and not resolved_project_name:
+        raise ValueError("缺少 project_code/project_name，无法从评审意见目录中定位项目。")
+
+    rules_doc = {
         "project_code": resolved_project_code,
-        "project_name": project_name,
+        "project_name": resolved_project_name,
         "review_dir": str(review_dir),
         "source_files": {
-            "major_issues_xlsx": str(major_issues_path),
+            "major_issues_xlsx": str(major_issues_path) if major_issues_path is not None else None,
             "summary_xlsx": str(summary_path) if summary_path is not None else None,
             "supporting_docs": [str(path) for path in discovered.get("supporting_docs", ())],
+            "technical_points_excels": [str(path) for path in technical_points_excels],
         },
         "project_summary": _build_project_summary(summary_row),
-        "major_issues": {
-            "technical_opinion": _cell(major_row, 6),
-            "technical_expert": _cell(major_row, 7),
-            "technical_reply": _cell(major_row, 8),
-            "cost_opinion": _cell(major_row, 9),
-            "cost_expert": _cell(major_row, 10),
-            "cost_reply": _cell(major_row, 11),
-            "execution_status": _cell(major_row, 12),
-        },
+        "major_issues": _extract_major_issues(major_row, project_code=resolved_project_code),
     }
-    bundle["requirements"] = _build_requirements(bundle)
-    return bundle
+    rules_doc["review_rules"] = _build_review_rules(rules_doc)
+    rules_doc["review_rules"].extend(
+        _load_technical_point_rules(
+            technical_points_excels,
+            project_name=resolved_project_name,
+            project_code=resolved_project_code,
+        )
+    )
+    return rules_doc
+
+
+def load_review_bundle(review_dir: Path, *, project_code: str | None = None) -> dict[str, Any]:
+    return load_review_rules(review_dir, project_code=project_code)
 
 
 def review_audit(
@@ -198,11 +226,19 @@ def review_audit(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     resolved_project_code = (project_code or _infer_project_code(drawing_path)).strip()
-    if not resolved_project_code:
-        raise ValueError("无法从图纸路径推断工程编号，请显式传入 --project-code。")
+    inferred_project_name = _infer_project_name(drawing_path)
 
     run_dir = out_dir / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    review_rules = load_review_rules(
+        review_dir,
+        project_code=(resolved_project_code or None),
+        project_name=(inferred_project_name or None),
+    )
+    resolved_project_code = resolved_project_code or str(review_rules.get("project_code") or "").strip()
+    if not resolved_project_code:
+        raise ValueError("无法从图纸路径或评审意见中定位工程编号，请显式传入 --project-code。")
 
     drawing_info_json_path = write_drawing_info(
         drawing_path,
@@ -210,10 +246,8 @@ def review_audit(
         parse_options=parse_options,
     )
     drawing_info = json.loads(drawing_info_json_path.read_text(encoding="utf-8"))
-
-    review_bundle = load_review_bundle(review_dir, project_code=resolved_project_code)
-    review_bundle_json_path = run_dir / "review_bundle.json"
-    review_bundle_json_path.write_text(json.dumps(review_bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+    review_rules_json_path = run_dir / "review_rules.json"
+    review_rules_json_path.write_text(json.dumps(review_rules, ensure_ascii=False, indent=2), encoding="utf-8")
 
     sparkflow_output = None
     sparkflow_report: dict[str, Any] | None = None
@@ -234,10 +268,10 @@ def review_audit(
         drawing_path=drawing_path,
         project_code=resolved_project_code,
         drawing_info=drawing_info,
-        review_bundle=review_bundle,
+        review_rules_doc=review_rules,
         sparkflow_report=sparkflow_report,
         drawing_info_json_path=drawing_info_json_path,
-        review_bundle_json_path=review_bundle_json_path,
+        review_rules_json_path=review_rules_json_path,
         sparkflow_report_json_path=(sparkflow_output.report_json_path if sparkflow_output is not None else None),
         sparkflow_report_md_path=(sparkflow_output.report_md_path if sparkflow_output is not None else None),
         include_sparkflow_audit=include_sparkflow_audit,
@@ -251,7 +285,7 @@ def review_audit(
     return ReviewAuditOutput(
         run_dir=run_dir,
         drawing_info_json_path=drawing_info_json_path,
-        review_bundle_json_path=review_bundle_json_path,
+        review_rules_json_path=review_rules_json_path,
         review_report_json_path=review_report_json_path,
         review_report_md_path=review_report_md_path,
         sparkflow_report_json_path=(sparkflow_output.report_json_path if sparkflow_output is not None else None),
@@ -261,7 +295,7 @@ def review_audit(
 
 def render_review_report_markdown(report: dict[str, Any]) -> str:
     lines: list[str] = []
-    lines.append("# SparkFlow 文档驱动复审报告")
+    lines.append("# SparkFlow 评审规则审查报告")
     lines.append("")
     lines.append(f"- created_at: {report.get('created_at')}")
     lines.append(f"- input_path: {report.get('input_path')}")
@@ -286,8 +320,8 @@ def render_review_report_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- {key}: {_format_value(value)}")
         lines.append("")
 
-    bundle = report.get("review_bundle") or {}
-    project_summary = bundle.get("project_summary") or {}
+    rules_doc = report.get("review_rules") or {}
+    project_summary = rules_doc.get("project_summary") or {}
     if project_summary:
         lines.append("## Project Summary")
         lines.append("")
@@ -296,9 +330,9 @@ def render_review_report_markdown(report: dict[str, Any]) -> str:
                 lines.append(f"- {key}: {_format_value(value)}")
         lines.append("")
 
-    major = bundle.get("major_issues") or {}
+    major = rules_doc.get("major_issues") or {}
     if major:
-        lines.append("## Review Opinions")
+        lines.append("## Review Rules Source")
         lines.append("")
         for key in (
             "technical_opinion",
@@ -314,15 +348,17 @@ def render_review_report_markdown(report: dict[str, Any]) -> str:
                 lines.append(str(value))
                 lines.append("")
 
-    items = report.get("requirements") or []
-    lines.append("## Checklist")
+    items = report.get("review_rule_results") or []
+    lines.append("## Rule Results")
     lines.append("")
     if not items:
-        lines.append("无项目要求。")
+        lines.append("无评审规则。")
         lines.append("")
     else:
         for index, item in enumerate(items, start=1):
-            lines.append(f"{index}. [{item.get('result')}] {item.get('source_type')}: {item.get('text')}")
+            lines.append(f"{index}. [{item.get('result')}] {item.get('rule_id')}: {item.get('source_text')}")
+            lines.append(f"   - source_type: {item.get('source_type')}")
+            lines.append(f"   - check_type: {item.get('check_type')}")
             lines.append(f"   - scope: {item.get('scope')}")
             if item.get("keywords"):
                 lines.append(f"   - keywords: {', '.join(item.get('keywords') or [])}")
@@ -343,27 +379,28 @@ def _build_review_report(
     drawing_path: Path,
     project_code: str,
     drawing_info: dict[str, Any],
-    review_bundle: dict[str, Any],
+    review_rules_doc: dict[str, Any],
     sparkflow_report: dict[str, Any] | None,
     drawing_info_json_path: Path,
-    review_bundle_json_path: Path,
+    review_rules_json_path: Path,
     sparkflow_report_json_path: Path | None,
     sparkflow_report_md_path: Path | None,
     include_sparkflow_audit: bool,
 ) -> dict[str, Any]:
     unique_texts = [str(item) for item in drawing_info.get("unique_texts") or []]
-    evaluated_requirements = [_evaluate_requirement(item, unique_texts) for item in review_bundle.get("requirements") or []]
-    counts = Counter(item["result"] for item in evaluated_requirements)
+    review_rule_results = [_evaluate_review_rule(item, unique_texts) for item in review_rules_doc.get("review_rules") or []]
+    counts = Counter(item["result"] for item in review_rule_results)
     placeholder_texts = list(drawing_info.get("placeholder_texts") or [])
     return {
         "created_at": datetime.now().astimezone().isoformat(),
         "input_path": str(drawing_path),
         "project_code": project_code,
-        "project_name": review_bundle.get("project_name"),
-        "review_dir": review_bundle.get("review_dir"),
-        "source_files": review_bundle.get("source_files"),
+        "project_name": review_rules_doc.get("project_name"),
+        "review_dir": review_rules_doc.get("review_dir"),
+        "source_files": review_rules_doc.get("source_files"),
         "drawing_info_json_path": str(drawing_info_json_path),
-        "review_bundle_json_path": str(review_bundle_json_path),
+        "review_rules_json_path": str(review_rules_json_path),
+        "review_bundle_json_path": str(review_rules_json_path),
         "sparkflow_report_json_path": str(sparkflow_report_json_path) if sparkflow_report_json_path is not None else None,
         "sparkflow_report_md_path": str(sparkflow_report_md_path) if sparkflow_report_md_path is not None else None,
         "summary": {
@@ -372,32 +409,39 @@ def _build_review_report(
             "sparkflow_issue_count": (len(sparkflow_report.get("issues") or []) if sparkflow_report is not None else None),
             "placeholder_text_count": len(placeholder_texts),
             "placeholder_texts": placeholder_texts,
+            "review_rule_counts": dict(counts),
             "requirement_counts": dict(counts),
         },
-        "review_bundle": {
-            "project_summary": review_bundle.get("project_summary"),
-            "major_issues": review_bundle.get("major_issues"),
+        "review_rules": {
+            "project_summary": review_rules_doc.get("project_summary"),
+            "major_issues": review_rules_doc.get("major_issues"),
         },
-        "requirements": evaluated_requirements,
+        "review_bundle": {
+            "project_summary": review_rules_doc.get("project_summary"),
+            "major_issues": review_rules_doc.get("major_issues"),
+        },
+        "review_rule_results": review_rule_results,
+        "requirements": review_rule_results,
     }
 
 
-def _evaluate_requirement(item: dict[str, Any], unique_texts: list[str]) -> dict[str, Any]:
+def _evaluate_review_rule(item: dict[str, Any], unique_texts: list[str]) -> dict[str, Any]:
     scope = item.get("scope") or "drawing"
+    check_type = item.get("check_type") or "drawing_text_presence"
     keywords = [str(keyword) for keyword in item.get("keywords") or [] if str(keyword).strip()]
     matches = _find_text_matches(unique_texts, keywords)
-    result = "manual_required"
+    result = "manual_review"
     explanation = ""
-    if scope != "drawing":
-        explanation = "该条意见依赖说明书、预算或其他附件，不能仅凭 DWG 判定。"
+    if check_type == "manual_review" or scope != "drawing":
+        explanation = "该条规则依赖说明书、预算或其他附件，不能仅凭解析后的图纸判定。"
     elif not keywords:
-        explanation = "该条意见缺少稳定的图纸关键词，当前仅能保留为人工复核项。"
+        explanation = "该条规则未能提炼出稳定的图纸关键词，当前仅能保留为人工复核项。"
     elif matches:
-        result = "evidence_found"
-        explanation = "在当前图纸文本中找到了与评审意见对应的证据。"
+        result = "passed"
+        explanation = "规则命中的图纸文本证据已找到。"
     else:
-        result = "not_found_in_drawing"
-        explanation = "当前图纸文本中未找到对应证据，建议结合图纸页面和附件人工复核。"
+        result = "failed"
+        explanation = "解析后的图纸文本中未找到该规则要求的证据。"
     return {
         **item,
         "result": result,
@@ -419,37 +463,45 @@ def _find_text_matches(unique_texts: list[str], keywords: list[str]) -> list[str
     return matches
 
 
-def _build_requirements(bundle: dict[str, Any]) -> list[dict[str, Any]]:
-    major = bundle.get("major_issues") or {}
+def _build_review_rules(rules_doc: dict[str, Any]) -> list[dict[str, Any]]:
+    major = rules_doc.get("major_issues") or {}
     technical_items = _split_technical_items(major.get("technical_opinion") or "")
     technical_replies = _split_sub_items(major.get("technical_reply") or "")
     cost_items = _split_numbered_items(major.get("cost_opinion") or "")
     cost_replies = _split_numbered_items(major.get("cost_reply") or "")
 
-    requirements: list[dict[str, Any]] = []
+    review_rules: list[dict[str, Any]] = []
     for index, text in enumerate(technical_items):
-        requirements.append(
+        review_rules.append(
             {
+                "rule_id": f"technical.{index + 1}",
                 "source_type": "technical",
                 "item_no": index + 1,
-                "text": text,
+                "source_text": text,
                 "reply": technical_replies[index] if index < len(technical_replies) else "",
                 "scope": _classify_scope(text),
+                "check_type": _classify_check_type(text),
                 "keywords": _extract_keywords(text),
             }
         )
     for index, text in enumerate(cost_items):
-        requirements.append(
+        review_rules.append(
             {
+                "rule_id": f"cost.{index + 1}",
                 "source_type": "cost",
                 "item_no": index + 1,
-                "text": text,
+                "source_text": text,
                 "reply": cost_replies[index] if index < len(cost_replies) else "",
                 "scope": _classify_scope(text),
+                "check_type": _classify_check_type(text),
                 "keywords": _extract_keywords(text),
             }
         )
-    return requirements
+    return review_rules
+
+
+def _build_requirements(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    return _build_review_rules(bundle)
 
 
 def _classify_scope(text: str) -> str:
@@ -457,6 +509,12 @@ def _classify_scope(text: str) -> str:
     if any(hint in normalized for hint in _MANUAL_ONLY_HINTS):
         return "manual"
     return "drawing"
+
+
+def _classify_check_type(text: str) -> str:
+    if _classify_scope(text) != "drawing":
+        return "manual_review"
+    return "drawing_text_presence"
 
 
 def _extract_keywords(text: str) -> list[str]:
@@ -527,14 +585,32 @@ def _split_numbered_items(text: str) -> list[str]:
 
 def _discover_review_files(review_dir: Path) -> dict[str, Any]:
     files = list(review_dir.iterdir())
-    xlsx_files = [path for path in files if path.suffix.lower() == ".xlsx"]
+    xlsx_files = [path for path in files if path.is_file() and path.suffix.lower() == ".xlsx"]
+    if review_dir.name == "评审技术要点":
+        technical_points_excels = tuple(
+            sorted(
+                path
+                for path in review_dir.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".xls", ".xlsx"}
+            )
+        )
+    else:
+        technical_points_dir = review_dir / "评审技术要点"
+        technical_points_excels = tuple(
+            sorted(
+                path
+                for path in technical_points_dir.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".xls", ".xlsx"}
+            )
+        ) if technical_points_dir.exists() else ()
     supporting_docs = sorted(
-        path for path in files if path.suffix.lower() in {".doc", ".docx", ".pdf", ".xls", ".xlsx"}
+        path for path in files if path.is_file() and path.suffix.lower() in {".doc", ".docx", ".pdf", ".xls", ".xlsx"}
     )
     return {
         "major_issues": _pick_preferred_file(xlsx_files, "主要问题统计表"),
         "summary": _pick_preferred_file(xlsx_files, "评审情况汇总表"),
-        "supporting_docs": tuple(supporting_docs),
+        "supporting_docs": tuple(dict.fromkeys([*supporting_docs, *technical_points_excels])),
+        "technical_points_excels": technical_points_excels,
     }
 
 
@@ -546,6 +622,52 @@ def _pick_preferred_file(paths: list[Path], keyword: str) -> Path | None:
     return candidates[0]
 
 
+def _resolve_review_dir(review_dir: Path) -> Path:
+    if review_dir.name != "评审技术要点":
+        return review_dir
+    parent = review_dir.parent
+    if not parent.exists() or not parent.is_dir():
+        return review_dir
+    discovered = _discover_review_files(parent)
+    if discovered.get("major_issues") is not None or discovered.get("summary") is not None:
+        return parent
+    return review_dir
+
+
+def _resolve_project_row(
+    xlsx_path: Path,
+    *,
+    project_code: str,
+    project_name: str,
+    preferred_sheet_keyword: str,
+    allow_missing: bool = False,
+) -> list[str] | None:
+    sheets = _read_excel_sheets(xlsx_path)
+    ordered = sorted(sheets, key=lambda item: (preferred_sheet_keyword not in item[0], item[0]))
+    normalized_name = _normalize_space(project_name).replace(" ", "")
+    fuzzy_match: list[str] | None = None
+    for _, rows in ordered:
+        for row in rows:
+            if project_code and project_code in row:
+                return row
+            if not normalized_name:
+                continue
+            normalized_cells = [_normalize_space(cell).replace(" ", "") for cell in row if _normalize_space(cell)]
+            if any(normalized_name == cell for cell in normalized_cells):
+                return row
+            if fuzzy_match is None and any(normalized_name in cell for cell in normalized_cells):
+                fuzzy_match = row
+    if fuzzy_match is not None:
+        return fuzzy_match
+    if allow_missing:
+        return None
+    if project_code:
+        raise ValueError(f"{xlsx_path.name} 中未找到工程编号 {project_code} 对应的项目行。")
+    if normalized_name:
+        raise ValueError(f"{xlsx_path.name} 中未找到工程名称 {project_name} 对应的项目行。")
+    raise ValueError("缺少 project_code/project_name，无法从评审意见目录中定位项目。")
+
+
 def _load_project_row(
     xlsx_path: Path,
     *,
@@ -553,7 +675,7 @@ def _load_project_row(
     preferred_sheet_keyword: str,
     allow_missing: bool = False,
 ) -> list[str] | None:
-    sheets = _read_xlsx_sheets(xlsx_path)
+    sheets = _read_excel_sheets(xlsx_path)
     ordered = sorted(sheets, key=lambda item: (preferred_sheet_keyword not in item[0], item[0]))
     for _, rows in ordered:
         for row in rows:
@@ -567,6 +689,25 @@ def _load_project_row(
 def _build_project_summary(row: list[str] | None) -> dict[str, Any]:
     if not row:
         return {}
+    if _looks_like_project_code(_cell(row, 2)):
+        project_name = _cell(row, 1)
+        project_code = _cell(row, 2)
+        total_investment = _cell(row, 3)
+        viability_estimate = _cell(row, 4)
+        submitted_budget = _cell(row, 5)
+        approved_budget = _cell(row, 6) or _cell(row, 7)
+        project_type = _cell(row, 8)
+        standard_design_diff = _cell(row, 33) or _cell(row, 34)
+        return {
+            "project_name": project_name,
+            "project_code": project_code,
+            "total_investment": total_investment,
+            "viability_estimate": viability_estimate,
+            "submitted_budget": submitted_budget,
+            "approved_budget": approved_budget,
+            "project_type": project_type,
+            "standard_design_diff": standard_design_diff,
+        }
     return {
         "project_name": _cell(row, 1),
         "project_code": _cell(row, 2),
@@ -579,10 +720,77 @@ def _build_project_summary(row: list[str] | None) -> dict[str, Any]:
     }
 
 
+def _project_name_from_major_row(row: list[str] | None, *, project_code: str) -> str:
+    if row is None:
+        return ""
+    if _cell(row, 2) == project_code and _cell(row, 1):
+        return _cell(row, 1)
+    if _cell(row, 2) and not _looks_like_project_code(_cell(row, 2)):
+        return _cell(row, 2)
+    if _cell(row, 1) and not _looks_like_project_code(_cell(row, 1)):
+        return _cell(row, 1)
+    for cell in row:
+        normalized = _normalize_space(cell)
+        if normalized and not _looks_like_project_code(normalized):
+            return normalized
+    return ""
+
+
+def _project_code_from_row(row: list[str] | None) -> str:
+    if row is None:
+        return ""
+    for cell in row:
+        normalized = _normalize_space(cell)
+        if _looks_like_project_code(normalized):
+            return normalized
+    return ""
+
+
+def _extract_major_issues(row: list[str] | None, *, project_code: str) -> dict[str, str]:
+    if row is None:
+        return {
+            "technical_opinion": "",
+            "technical_expert": "",
+            "technical_reply": "",
+            "cost_opinion": "",
+            "cost_expert": "",
+            "cost_reply": "",
+            "execution_status": "",
+        }
+    if _cell(row, 2) == project_code and len(row) >= 11 and ("执行" in _cell(row, 10) or _cell(row, 10) in {"是", "否"}):
+        return {
+            "technical_opinion": _cell(row, 6),
+            "technical_expert": "",
+            "technical_reply": _cell(row, 7),
+            "cost_opinion": _cell(row, 8),
+            "cost_expert": "",
+            "cost_reply": _cell(row, 9),
+            "execution_status": _cell(row, 10),
+        }
+    return {
+        "technical_opinion": _cell(row, 6),
+        "technical_expert": _cell(row, 7),
+        "technical_reply": _cell(row, 8),
+        "cost_opinion": _cell(row, 9),
+        "cost_expert": _cell(row, 10),
+        "cost_reply": _cell(row, 11),
+        "execution_status": _cell(row, 12),
+    }
+
+
 def _cell(row: list[str] | None, index: int) -> str:
     if row is None or index >= len(row):
         return ""
     return _normalize_space(row[index])
+
+
+def _read_excel_sheets(path: Path) -> list[tuple[str, list[list[str]]]]:
+    suffix = path.suffix.lower()
+    if suffix == ".xlsx":
+        return _read_xlsx_sheets(path)
+    if suffix == ".xls":
+        return [(path.stem, _read_xls_rows_via_excel(path))]
+    raise ValueError(f"{path.name} 不是受支持的 Excel 文件。")
 
 
 def _read_xlsx_sheets(path: Path) -> list[tuple[str, list[list[str]]]]:
@@ -699,6 +907,180 @@ def _infer_project_code(path: Path) -> str:
         if match:
             return match.group(0)
     return ""
+
+
+def _infer_project_name(path: Path) -> str:
+    candidates = [_clean_project_name_candidate(path.stem)]
+    candidates.extend(_clean_project_name_candidate(parent.name) for parent in list(path.parents)[:4])
+    ranked = sorted(
+        {candidate for candidate in candidates if candidate},
+        key=_project_name_candidate_score,
+        reverse=True,
+    )
+    return ranked[0] if ranked else ""
+
+
+def _clean_project_name_candidate(value: str) -> str:
+    text = _normalize_space(value)
+    if not text:
+        return ""
+    for prefix in ("图纸-", "底图-"):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+    if text.startswith("配网工程设计评审技术要点"):
+        match = re.search(r"[（(]([^()（）]+)[)）]$", text)
+        if match:
+            text = match.group(1)
+        else:
+            text = text.removeprefix("配网工程设计评审技术要点").strip("（）() -_")
+    text = re.sub(r"(?<=工程)\d+$", "", text)
+    if not text:
+        return ""
+    if text in {"评审意见", "评审技术要点", "施工图"}:
+        return ""
+    if text.startswith("附件"):
+        return ""
+    if "主要问题统计表" in text or "评审情况汇总表" in text:
+        return ""
+    return text.strip(" _-")
+
+
+def _project_name_candidate_score(value: str) -> tuple[int, int]:
+    score = len(value)
+    if "工程" in value:
+        score += 100
+    if "10kV" in value or "20kV" in value:
+        score += 20
+    if any(token in value for token in ("图纸", "评审", "附件", "施工图")):
+        score -= 200
+    return score, len(value)
+
+
+def _looks_like_project_code(value: str) -> bool:
+    return bool(_PROJECT_CODE_RE.fullmatch(value or ""))
+
+
+def _load_technical_point_rules(
+    paths: tuple[Path, ...],
+    *,
+    project_name: str,
+    project_code: str,
+) -> list[dict[str, Any]]:
+    rules: list[dict[str, Any]] = []
+    index = 0
+    for path in _candidate_technical_point_paths(paths, project_name=project_name, project_code=project_code):
+        sheets = _read_excel_sheets(path)
+        if not _technical_points_file_matches_project(path, sheets, project_name=project_name, project_code=project_code):
+            continue
+        rules.extend(_extract_technical_point_rules(path, sheets, start_index=index + 1))
+        index = len(rules)
+    return rules
+
+
+def _candidate_technical_point_paths(
+    paths: tuple[Path, ...],
+    *,
+    project_name: str,
+    project_code: str,
+) -> tuple[Path, ...]:
+    filename_matches = tuple(
+        path for path in paths if _technical_points_filename_matches_project(path, project_name=project_name, project_code=project_code)
+    )
+    if filename_matches:
+        return filename_matches
+    return paths
+
+
+def _technical_points_filename_matches_project(
+    path: Path,
+    *,
+    project_name: str,
+    project_code: str,
+) -> bool:
+    normalized_name = _normalize_space(project_name).replace(" ", "")
+    filename = path.name.replace(" ", "")
+    if normalized_name and normalized_name in filename:
+        return True
+    if project_code and project_code in filename:
+        return True
+    return False
+
+
+def _technical_points_file_matches_project(
+    path: Path,
+    sheets: list[tuple[str, list[list[str]]]],
+    *,
+    project_name: str,
+    project_code: str,
+) -> bool:
+    if _technical_points_filename_matches_project(path, project_name=project_name, project_code=project_code):
+        return True
+    normalized_name = _normalize_space(project_name).replace(" ", "")
+    haystacks: list[str] = []
+    for _, rows in sheets:
+        for row in rows[:12]:
+            text = " ".join(cell for cell in row if cell)
+            if text:
+                haystacks.append(text.replace(" ", ""))
+    if project_code and any(project_code in text for text in haystacks):
+        return True
+    if normalized_name and any(normalized_name in text for text in haystacks):
+        return True
+    return False
+
+
+def _extract_technical_point_rules(
+    path: Path,
+    sheets: list[tuple[str, list[list[str]]]],
+    *,
+    start_index: int,
+) -> list[dict[str, Any]]:
+    rules: list[dict[str, Any]] = []
+    current_category = ""
+    current_item = ""
+    next_index = start_index
+    for sheet_name, rows in sheets:
+        header_idx = _find_technical_points_header(rows)
+        if header_idx is None:
+            continue
+        for row in rows[header_idx + 1 :]:
+            cells = [_normalize_space(cell) for cell in row]
+            if not any(cells):
+                continue
+            if len(cells) > 0 and cells[0]:
+                current_category = cells[0]
+            if len(cells) > 1 and cells[1]:
+                current_item = cells[1]
+            review_point = cells[2] if len(cells) > 2 else ""
+            applicable = cells[3] if len(cells) > 3 else ""
+            if applicable != "是" or not review_point:
+                continue
+            rules.append(
+                {
+                    "rule_id": f"technical_points.{next_index}",
+                    "source_type": "technical_points",
+                    "item_no": next_index,
+                    "source_text": review_point,
+                    "reply": "",
+                    "scope": _classify_scope(review_point),
+                    "check_type": _classify_check_type(review_point),
+                    "keywords": _extract_keywords(review_point),
+                    "category": current_category,
+                    "review_item": current_item,
+                    "source_file": str(path),
+                    "source_sheet": sheet_name,
+                }
+            )
+            next_index += 1
+    return rules
+
+
+def _find_technical_points_header(rows: list[list[str]]) -> int | None:
+    for idx, row in enumerate(rows):
+        normalized = [_normalize_space(cell) for cell in row]
+        if "评审类别" in normalized and "评审项" in normalized and "评审要点" in normalized:
+            return idx
+    return None
 
 
 def _compute_bbox(entities: tuple[Any, ...]) -> dict[str, float] | None:

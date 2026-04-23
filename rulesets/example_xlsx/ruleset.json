@@ -1,8 +1,8 @@
 {
-  "version": "example_ruleset_xlsx_v1",
+  "version": "example_ruleset_xlsx_v2",
   "model": {
     "wire_filter": {
-      "min_length": 0.25
+      "min_length": 0.0
     }
   },
   "rules_table": "rules.xlsx"

@@ -117,6 +117,7 @@ def build_electrical_graph(model: SystemModel) -> SystemModel:
         unresolved=model.unresolved,
         connectivity=connectivity,
         electrical=electrical,
+        project_documents=model.project_documents,
     )
 
 

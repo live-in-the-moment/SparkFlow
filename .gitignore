@@ -35,16 +35,32 @@ htmlcov/
 *.log
 *.tmp
 *.temp
+nul
 
 # Local AI/tool state
+.agents/
+.claude-flow/
+.omx/
 .codex_new/
 .trae/
 
 # Project-generated outputs
 out/
 out_*/
+tmp/
 tmp_parse_compare/
 
 # Large local input datasets (do not upload by default)
 image/
-.artifacts
+.artifacts/
+
+# Codex local configuration
+.codex/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Claude Code local config
+CLAUDE.local.md

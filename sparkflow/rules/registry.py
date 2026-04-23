@@ -8,6 +8,7 @@ from .rules import (
     DuplicateDeviceLabelRule,
     FloatingWireEndpointsRule,
 )
+from .project_rules import ProjectPresenceRule, ProjectQuantityConsistencyRule, ProjectQuantityNoteRule
 from .topology_rules import (
     ElectricalBranchBoxInsufficientBranchesRule,
     ElectricalBusbarUnderconnectedRule,
@@ -90,6 +91,27 @@ def build_rule(rule_id: str, params: dict[str, Any] | None = None) -> Rule:
         return ElectricalBranchBoxInsufficientBranchesRule(**kwargs)
     if rule_id == ElectricalRelationUnresolvedRule.rule_id:
         return ElectricalRelationUnresolvedRule()
+    if rule_id == 'project.smart_gateway.count_mismatch':
+        sev = params.get('severity')
+        return ProjectQuantityConsistencyRule(key='smart_gateway', severity=str(sev) if sev is not None else 'error')
+    if rule_id == 'project.distribution_transformer.count_mismatch':
+        sev = params.get('severity')
+        return ProjectQuantityConsistencyRule(key='distribution_transformer', severity=str(sev) if sev is not None else 'error')
+    if rule_id == 'project.pole_tower.count_mismatch':
+        sev = params.get('severity')
+        return ProjectQuantityConsistencyRule(key='pole_tower', severity=str(sev) if sev is not None else 'error')
+    if rule_id == 'project.dtu.count_mismatch':
+        sev = params.get('severity')
+        return ProjectQuantityConsistencyRule(key='dtu', severity=str(sev) if sev is not None else 'error')
+    if rule_id == 'project.measurement_comm_unit.missing_presence':
+        sev = params.get('severity')
+        return ProjectPresenceRule(key='measurement_comm_unit', severity=str(sev) if sev is not None else 'warning')
+    if rule_id == 'project.secondary_cabinet.count_mismatch':
+        sev = params.get('severity')
+        return ProjectQuantityConsistencyRule(key='secondary_cabinet', severity=str(sev) if sev is not None else 'error')
+    if rule_id == 'project.secondary_cabinet.missing_quantity_note':
+        sev = params.get('severity')
+        return ProjectQuantityNoteRule(key='secondary_cabinet', severity=str(sev) if sev is not None else 'warning')
     if rule_id == TopologyTerminalUnconnectedRule.rule_id:
         sev = params.get('severity')
         return TopologyTerminalUnconnectedRule(severity=str(sev)) if sev is not None else TopologyTerminalUnconnectedRule()
@@ -116,4 +138,11 @@ def list_rule_ids() -> list[str]:
         ElectricalBusbarUnderconnectedRule.rule_id,
         ElectricalBranchBoxInsufficientBranchesRule.rule_id,
         ElectricalRelationUnresolvedRule.rule_id,
+        'project.smart_gateway.count_mismatch',
+        'project.distribution_transformer.count_mismatch',
+        'project.pole_tower.count_mismatch',
+        'project.dtu.count_mismatch',
+        'project.measurement_comm_unit.missing_presence',
+        'project.secondary_cabinet.count_mismatch',
+        'project.secondary_cabinet.missing_quantity_note',
     ]

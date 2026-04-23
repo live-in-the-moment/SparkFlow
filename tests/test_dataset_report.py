@@ -63,7 +63,7 @@ def _build_run_dir(root: Path) -> Path:
         json.dumps(
             {
                 'created_at': '2026-03-25T12:00:00+08:00',
-                'dataset_dir': 'D:\\code\\project\\moment\\SparkFlow\\image\\国家电网公司380220V配电网工程典型设计（2018年版）_1772430671059\\配电部分CAD',
+                'dataset_dir': 'D:\\path\\dataset_root\\配电部分CAD',
                 'rule_version': 'stategrid_peidian_strict_v1',
                 'counts': {'passed': 1, 'failed': 1, 'skipped': 1, 'unprocessed': 0},
                 'selection_counts': {'supported_electrical': 2, 'geometry_only': 1, 'unsupported': 0},

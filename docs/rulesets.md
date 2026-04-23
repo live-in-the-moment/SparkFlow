@@ -10,6 +10,12 @@
 - [`example_normative`](../rulesets/example_normative/ruleset.json)
 - [`stategrid_peidian_strict`](../rulesets/stategrid_peidian_strict/ruleset.json)
 
+命名说明：
+
+- `stategrid_peidian_strict` 是规则集目录名，也是命令行里 `--ruleset` 传入的目录
+- `stategrid_peidian_strict_v1` 是该目录下 `ruleset.json` 里的 `version`
+- 审图产物里的 `rule_version` 字段会记录 `version`，所以看到 `stategrid_peidian_strict_v1` 属于正常现象
+
 ## 2. 支持的输入形式
 
 ### 2.1 结构化 JSON
@@ -78,6 +84,8 @@
 
 特点：
 
+- 目录名：`stategrid_peidian_strict`
+- 当前版本号：`stategrid_peidian_strict_v1`
 - 将 `wire.floating_endpoints` 提升为严格判定
 - 适合正式整改或严审场景
 

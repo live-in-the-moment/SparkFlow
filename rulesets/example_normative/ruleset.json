@@ -1,8 +1,8 @@
 {
-  "version": "example_ruleset_normative_v2",
+  "version": "example_ruleset_normative_v3",
   "model": {
     "wire_filter": {
-      "min_length": 0.25
+      "min_length": 0.0
     }
   },
   "normative_summary": "normative_summary.md"

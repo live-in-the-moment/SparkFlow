@@ -80,6 +80,9 @@ python -X utf8 -m sparkflow rectification-checklist <run_dir>
 
 对国家电网 `配电部分CAD` 的严格跑批结果示例：
 
+- 使用的规则集目录：`rulesets/stategrid_peidian_strict`
+- 产物中记录的规则版本：`stategrid_peidian_strict_v1`
+
 - [final_audit_report.md](../out_stategrid_peidian_audit/20260325T100443Z/final_audit_report.md)
 - [rectification_checklist.md](../out_stategrid_peidian_audit/20260325T100443Z/rectification_checklist.md)
 

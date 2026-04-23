@@ -97,6 +97,12 @@ def classify_drawing(path: Path, texts: Iterable[str] | None = None) -> DrawingS
             )
         return base
     if base.reason == 'no_supported_keyword_match':
+        if text_signals['supported_keyword_hits']:
+            return DrawingSelection(
+                drawing_class='supported_electrical',
+                reason=f"text_supported_keyword:{_format_hits(text_signals['supported_keyword_hits'])}",
+                eligible_for_electrical=True,
+            )
         if text_signals['electrical_score'] >= 3 and text_signals['strong_electrical_hits']:
             return DrawingSelection(
                 drawing_class='supported_electrical',
@@ -181,11 +187,15 @@ def _classify_from_path(path: Path) -> DrawingSelection:
 def _score_text_features(texts: Iterable[str]) -> dict[str, object]:
     geometry_hits: list[str] = []
     electrical_hits: list[str] = []
+    supported_keyword_hits: list[str] = []
     for raw in texts:
         normalized = _normalize_text(raw)
         if not normalized:
             continue
         lowered = normalized.lower()
+        for hint in _SUPPORTED_KEYWORDS:
+            if hint.lower() in lowered and hint not in supported_keyword_hits:
+                supported_keyword_hits.append(hint)
         for hint in _TEXT_GEOMETRY_HINTS:
             if hint.lower() in lowered and hint not in geometry_hits:
                 geometry_hits.append(hint)
@@ -198,6 +208,7 @@ def _score_text_features(texts: Iterable[str]) -> dict[str, object]:
     return {
         'geometry_hits': geometry_hits,
         'electrical_hits': electrical_hits,
+        'supported_keyword_hits': supported_keyword_hits,
         'geometry_score': geometry_score,
         'electrical_score': electrical_score,
         'strong_electrical_hits': strong_electrical_hits,

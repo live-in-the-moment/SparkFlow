@@ -65,7 +65,7 @@ def write_minimal_ruleset_dir(rules_dir: Path) -> None:
     cfg_path.write_text(
         json.dumps(
             {
-                "version": "example_ruleset_v8",
+                "version": "example_ruleset_v1",
                 "model": {},
                 "rules": [
                     {

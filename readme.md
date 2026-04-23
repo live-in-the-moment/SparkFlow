@@ -109,7 +109,7 @@ flowchart LR
   A["输入<br/>DWG / DXF + 评审意见目录"] --> B["CLI / Python API<br/>review-pipeline()"]
   B --> C["review_audit()<br/>drawing_info + review_rules + review_report"]
   C --> D["DWG 转 DXF<br/>复用 converted_dxf"]
-  D --> E["Layout1 图框识别<br/>A3/A4 frame + viewport"]
+  D --> E["Layout1 / 布局 图框识别<br/>A3/A4 + 擎能模板 + viewport"]
   E --> F["单页拆分<br/>SVG / PNG / texts.json / manifest.json"]
   C --> G["评审规则结果<br/>passed / failed / manual_review"]
   F --> H["逐页问题汇总<br/>placeholder / 暂命名 / 未定稿"]
@@ -124,6 +124,7 @@ flowchart LR
 - `review_rules.json`：从 `评审意见` 目录抽取出的项目/意见/回复与结构化评审规则
 - `review_report.json/.md`：基于评审规则的图纸审查结论
 - `split/manifest.json`：图框拆分页清单
+  - 单页记录至少包含：`seq`、`page_seq`、`sheet_no`、`title_part_no`、`title_part_total`、`primary_code`、`title`、`codes`、`placeholder_texts`
 - `split/pages/*.png|*.svg|*.texts.json`：单页图像和文本证据
 - `整改问题清单.md/.json`：正式整改问题清单
 
@@ -137,6 +138,25 @@ flowchart LR
 - 已迁移测试夹具：`tests/fixtures/review_baseline/030451DY26030001/fixture.json`
 
 后续优先以这条 `review-pipeline` 真实链路为准，不再把早期 `image/` 历史样例数据集当成当前主流程基线。
+
+### 补充验证案例：擎能模板（罗定加益项目）
+
+这轮新增验证了韶关市擎能设计有限公司模板下的真实项目：
+
+- 输入图纸：`docs\罗定供电局2025年中低压配电网第十批紧急项目--4项\罗定供电局2025年中低压配电网第十批紧急项目施工图--评审前\罗定供电局2025年中低压配电网第十批紧急项目施工图\加益供电所10kV合江线新增配变及黄沙公用台变改造工程\附件3 施工图\图纸-加益供电所10kV合江线新增配变及黄沙公用台变改造工程.dwg`
+- 评审目录：`docs\罗定供电局2025年中低压配电网第十批紧急项目--4项\评审意见及回复\评审技术要点`
+- 输出目录：`tmp\review_pipeline_jiayi_cli_case\20260422T062918Z`
+- 已验证结果：
+  - `split_page_count = 94`
+  - `page_issue_count = 2`
+  - `review_issue_count = 39`
+
+这个案例主要覆盖：
+
+- `擎能A3横/竖`、`擎能A4竖` 图框名识别
+- `布局` 空间图框拆分
+- 标题栏图号/图名提取
+- `page_seq` 与标题中的 `1/3、2/3、3/3` 提取
 
 ## 输出示意图
 
@@ -281,6 +301,14 @@ python -X utf8 -m sparkflow review-pipeline `
   --skip-sparkflow-audit
 ```
 
+Windows 下如果是反复复跑同一个项目，建议直接执行：
+
+```powershell
+.\scripts\run_review_pipeline.ps1
+```
+
+这个包装脚本把常用 `DWG`、`评审目录`、`输出目录` 和 `ODAFileConverter.exe` 预设收口在 [scripts/run_review_pipeline.ps1](scripts/run_review_pipeline.ps1) 顶部，避免 PowerShell 多行粘贴时把两条命令拼成一条。
+
 返回结果依次为：
 
 1. `run_dir`
@@ -330,6 +358,7 @@ sparkflow/        核心源码
 rulesets/         当前规则集输入：示例规则、严格规则、表格/XLSX/规范摘要示例
 catalog/          当前运行期模型配置：设备模板、导线过滤配置
 scripts/          辅助/排障脚本，不属于 review-pipeline 对外接口
+                 当前也包含 `run_review_pipeline.ps1` 这种面向 Windows 复跑场景的薄包装脚本
 tests/            回归测试与 CLI 验证
 image/            历史本地样例数据集，不是当前 review-pipeline 基线输入
 docs/             使用文档 + 当前实测项目图纸/评审意见

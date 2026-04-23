@@ -24,6 +24,7 @@ from .model.connectivity import ConnectivityBuildOptions, build_connectivity
 from .model.electrical import build_electrical_graph
 from .model.selection import resolve_selection, selection_texts_from_entities
 from .model.types import DrawingSelection, SystemModel
+from .project_docs import build_project_document_context
 from .reporting.debug_svg import write_debug_svg
 from .reporting.docx_report import write_docx_report
 from .reporting.markdown import render_markdown_report
@@ -352,7 +353,9 @@ def _audit_single_path(
         else:
             if parsed is None:
                 parsed = parse_cad(input_path, options=parse_options)
-            model = _attach_selection(build_system_model(parsed.entities, options=model_options), selection)
+            model = build_system_model(parsed.entities, options=model_options)
+            model = _attach_project_documents(model, input_path)
+            model = _attach_selection(model, selection)
             if level >= 3:
                 tol = 1.0
                 if parse_options is not None and parse_options.topology_tol is not None:
@@ -504,6 +507,24 @@ def _attach_selection(model: SystemModel, selection: DrawingSelection) -> System
         unresolved=model.unresolved,
         connectivity=model.connectivity,
         electrical=model.electrical,
+        project_documents=model.project_documents,
+    )
+
+
+def _attach_project_documents(model: SystemModel, input_path: Path) -> SystemModel:
+    context = build_project_document_context(input_path)
+    if context is None:
+        return model
+    return SystemModel(
+        wires=model.wires,
+        devices=model.devices,
+        texts=model.texts,
+        entity_index=model.entity_index,
+        selection=model.selection,
+        unresolved=model.unresolved,
+        connectivity=model.connectivity,
+        electrical=model.electrical,
+        project_documents=context,
     )
 
 
@@ -541,6 +562,7 @@ def _build_summary(model: SystemModel, selection: DrawingSelection, *, input_pat
         },
         'connectivity': _connectivity_summary(model),
         'electrical': _electrical_summary(model),
+        'project_documents': _project_document_summary(model),
     }
     return out
 
@@ -672,6 +694,21 @@ def _electrical_summary(model: SystemModel) -> dict:
         'net_count': len(electrical.nets),
         'relation_count': len(electrical.relations),
         'unresolved_count': len(electrical.unresolved),
+    }
+
+
+def _project_document_summary(model: SystemModel) -> dict:
+    context = model.project_documents
+    if context is None:
+        return {'enabled': False}
+    return {
+        'enabled': True,
+        'project_root': context.project_root,
+        'source_count': len(context.sources),
+        'sources': [source.path for source in context.sources],
+        'expected_counts': dict(sorted((key, int(round(value))) for key, value in context.expected_counts.items())),
+        'error_count': len(context.errors),
+        'errors': list(context.errors),
     }
 
 
