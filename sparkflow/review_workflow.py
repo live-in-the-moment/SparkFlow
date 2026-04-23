@@ -117,6 +117,7 @@ def review_pipeline(
     selection_mode: str = "auto",
     graph: str = "electrical",
     include_sparkflow_audit: bool = True,
+    rule_refine_mode: str = "heuristic",
 ) -> ReviewPipelineOutput:
     review_output = review_audit(
         drawing_path,
@@ -130,6 +131,7 @@ def review_pipeline(
         selection_mode=selection_mode,
         graph=graph,
         include_sparkflow_audit=include_sparkflow_audit,
+        rule_refine_mode=rule_refine_mode,
     )
     drawing_info = _read_json(review_output.drawing_info_json_path)
     split_source_path = _resolve_split_source_path(drawing_path, drawing_info)
