@@ -59,16 +59,6 @@ _MANUAL_ONLY_HINTS = (
     "附件",
 )
 
-_TECHNICAL_POINT_FILTER_PATTERNS = (
-    re.compile(r"附件\d+"),
-    re.compile(r"设计说明书"),
-    re.compile(r"材料清册"),
-    re.compile(r"评审意见表"),
-    re.compile(r"预算"),
-    re.compile(r"概算"),
-    re.compile(r"清册"),
-)
-
 
 @dataclass(frozen=True)
 class ReviewAuditOutput:
@@ -202,14 +192,14 @@ def load_review_rules(
         "project_summary": _build_project_summary(summary_row),
         "major_issues": _extract_major_issues(major_row, project_code=resolved_project_code),
     }
-    technical_point_result = _load_technical_point_rules(
-        technical_points_excels,
-        project_name=resolved_project_name,
-        project_code=resolved_project_code,
-    )
     rules_doc["review_rules"] = _build_review_rules(rules_doc)
-    rules_doc["review_rules"].extend(technical_point_result["review_rules"])
-    rules_doc["filtered_candidates"] = technical_point_result["filtered_candidates"]
+    rules_doc["review_rules"].extend(
+        _load_technical_point_rules(
+            technical_points_excels,
+            project_name=resolved_project_name,
+            project_code=resolved_project_code,
+        )
+    )
     return rules_doc
 
 
@@ -975,19 +965,16 @@ def _load_technical_point_rules(
     *,
     project_name: str,
     project_code: str,
-) -> dict[str, list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     rules: list[dict[str, Any]] = []
-    filtered_candidates: list[dict[str, Any]] = []
     index = 0
     for path in _candidate_technical_point_paths(paths, project_name=project_name, project_code=project_code):
         sheets = _read_excel_sheets(path)
         if not _technical_points_file_matches_project(path, sheets, project_name=project_name, project_code=project_code):
             continue
-        extracted = _extract_technical_point_rules(path, sheets, start_index=index + 1)
-        rules.extend(extracted["review_rules"])
-        filtered_candidates.extend(extracted["filtered_candidates"])
+        rules.extend(_extract_technical_point_rules(path, sheets, start_index=index + 1))
         index = len(rules)
-    return {"review_rules": rules, "filtered_candidates": filtered_candidates}
+    return rules
 
 
 def _candidate_technical_point_paths(
@@ -1047,18 +1034,16 @@ def _extract_technical_point_rules(
     sheets: list[tuple[str, list[list[str]]]],
     *,
     start_index: int,
-) -> dict[str, list[dict[str, Any]]]:
-    review_rules: list[dict[str, Any]] = []
-    filtered_candidates: list[dict[str, Any]] = []
-    candidate_rules: list[dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    rules: list[dict[str, Any]] = []
     current_category = ""
     current_item = ""
+    next_index = start_index
     for sheet_name, rows in sheets:
         header_idx = _find_technical_points_header(rows)
         if header_idx is None:
             continue
-        for row_idx, row in enumerate(rows[header_idx + 1 :], start=header_idx + 2):
-            raw_review_point = row[2] if len(row) > 2 else ""
+        for row in rows[header_idx + 1 :]:
             cells = [_normalize_space(cell) for cell in row]
             if not any(cells):
                 continue
@@ -1070,44 +1055,24 @@ def _extract_technical_point_rules(
             applicable = cells[3] if len(cells) > 3 else ""
             if applicable != "是" or not review_point:
                 continue
-            is_filtered, filter_reason = _is_attachment_or_documentary_rule(review_point)
-            candidate = {
-                "source_type": "technical_points",
-                "source_text": review_point,
-                "source_text_raw": str(raw_review_point or ""),
-                "reply": "",
-                "scope": _classify_scope(review_point),
-                "check_type": _classify_check_type(review_point),
-                "keywords": _extract_keywords(review_point),
-                "category": current_category,
-                "review_item": current_item,
-                "source_file": str(path),
-                "source_sheet": sheet_name,
-                "source_row": row_idx,
-                "filtered_out": is_filtered,
-                "filter_reason": filter_reason,
-            }
-            candidate_rules.append(candidate)
-
-    next_index = start_index
-    for candidate in candidate_rules:
-        if candidate["filtered_out"]:
-            filtered_candidates.append(candidate)
-            continue
-        accepted_rule = dict(candidate)
-        accepted_rule["rule_id"] = f"technical_points.{next_index}"
-        accepted_rule["item_no"] = next_index
-        review_rules.append(accepted_rule)
-        next_index += 1
-    return {"review_rules": review_rules, "filtered_candidates": filtered_candidates}
-
-
-def _is_attachment_or_documentary_rule(text: str) -> tuple[bool, str]:
-    normalized_text = _normalize_space(text)
-    for pattern in _TECHNICAL_POINT_FILTER_PATTERNS:
-        if pattern.search(normalized_text):
-            return True, f"matched:{pattern.pattern}"
-    return False, ""
+            rules.append(
+                {
+                    "rule_id": f"technical_points.{next_index}",
+                    "source_type": "technical_points",
+                    "item_no": next_index,
+                    "source_text": review_point,
+                    "reply": "",
+                    "scope": _classify_scope(review_point),
+                    "check_type": _classify_check_type(review_point),
+                    "keywords": _extract_keywords(review_point),
+                    "category": current_category,
+                    "review_item": current_item,
+                    "source_file": str(path),
+                    "source_sheet": sheet_name,
+                }
+            )
+            next_index += 1
+    return rules
 
 
 def _find_technical_points_header(rows: list[list[str]]) -> int | None:
