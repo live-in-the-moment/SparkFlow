@@ -1,5 +1,5 @@
 {
-  "version": "stategrid_peidian_strict_v1",
+  "version": "stategrid_peidian_strict_v2",
   "model": {
     "wire_filter": {
       "min_length": 0.0
@@ -138,6 +138,83 @@
       "rule_id": "electrical.relation_unresolved",
       "enabled": false,
       "params": {}
+    },
+    {
+      "rule_id": "project.smart_gateway.count_mismatch",
+      "enabled": true,
+      "severity": "error",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
+    },
+    {
+      "rule_id": "project.distribution_transformer.count_mismatch",
+      "enabled": true,
+      "severity": "error",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
+    },
+    {
+      "rule_id": "project.pole_tower.count_mismatch",
+      "enabled": true,
+      "severity": "error",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
+    },
+    {
+      "rule_id": "project.dtu.count_mismatch",
+      "enabled": true,
+      "severity": "error",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
+    },
+    {
+      "rule_id": "project.measurement_comm_unit.missing_presence",
+      "enabled": true,
+      "severity": "warning",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
+    },
+    {
+      "rule_id": "project.secondary_cabinet.count_mismatch",
+      "enabled": true,
+      "severity": "error",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
+    },
+    {
+      "rule_id": "project.secondary_cabinet.missing_quantity_note",
+      "enabled": true,
+      "severity": "warning",
+      "params": {},
+      "applies_to": [
+        "single_line",
+        "electrical_schematic",
+        "general_supported_electrical"
+      ]
     }
   ]
 }

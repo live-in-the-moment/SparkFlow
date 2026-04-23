@@ -45,6 +45,7 @@ def build_system_model(entities: tuple[CadEntity, ...], *, options: ModelBuildOp
         texts=tuple(texts),
         entity_index=entity_index,
         unresolved=tuple(unresolved),
+        project_documents=None,
     )
 
 

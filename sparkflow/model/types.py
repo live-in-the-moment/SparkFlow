@@ -107,6 +107,33 @@ class UnresolvedItem:
 
 
 @dataclass(frozen=True)
+class ProjectDocumentSource:
+    kind: str
+    path: str
+
+
+@dataclass(frozen=True)
+class ProjectDocumentFact:
+    key: str
+    display_name: str
+    value: float
+    source_kind: str
+    source_path: str
+    raw_label: str = ''
+    unit: str | None = None
+
+
+@dataclass(frozen=True)
+class ProjectDocumentContext:
+    project_root: str
+    sources: tuple[ProjectDocumentSource, ...] = ()
+    facts: tuple[ProjectDocumentFact, ...] = ()
+    expected_counts: dict[str, float] = field(default_factory=dict)
+    text_snippets: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ElectricalGraph:
     components: tuple[ElectricalComponent, ...] = ()
     terminals: tuple[ElectricalTerminal, ...] = ()
@@ -125,6 +152,7 @@ class SystemModel:
     unresolved: tuple[UnresolvedItem, ...] = ()
     connectivity: ConnectivityGraph | None = None
     electrical: ElectricalGraph | None = None
+    project_documents: ProjectDocumentContext | None = None
 
     @property
     def topology(self) -> ConnectivityGraph | None:

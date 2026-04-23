@@ -29,6 +29,14 @@ class DrawingSelectionTests(unittest.TestCase):
         self.assertEqual(selection.drawing_class, 'supported_electrical')
         self.assertIn('text_electrical', selection.reason)
 
+    def test_text_supported_keyword_can_promote_unsupported_path_to_electrical(self) -> None:
+        selection = classify_drawing(
+            Path('misc/unknown_plan.dxf'),
+            texts=['三相380V，60kVA'],
+        )
+        self.assertEqual(selection.drawing_class, 'supported_electrical')
+        self.assertIn('text_supported_keyword', selection.reason)
+
     def test_real_sample_paths_if_present(self) -> None:
         root = Path('image') / '国家电网公司380220V配电网工程典型设计（2018年版）_1772430671059'
         if not root.exists():

@@ -97,6 +97,7 @@ def build_connectivity(model: SystemModel, *, options: ConnectivityBuildOptions 
         unresolved=tuple(unresolved),
         connectivity=connectivity,
         electrical=model.electrical,
+        project_documents=model.project_documents,
     )
 
 

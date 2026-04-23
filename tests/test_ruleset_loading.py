@@ -16,6 +16,19 @@ from sparkflow.rules.registry import list_rule_ids
 
 
 class RulesetLoadingTests(unittest.TestCase):
+    def test_repository_example_rulesets_are_semantically_aligned(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        rules_root = repo_root / 'rulesets'
+        loaded = {
+            name: load_ruleset_dir(rules_root / name)
+            for name in ('example', 'example_table', 'example_xlsx', 'example_normative')
+        }
+
+        baseline = _normalize_loaded_ruleset(loaded['example'])
+        for name in ('example_table', 'example_xlsx', 'example_normative'):
+            with self.subTest(name=name):
+                self.assertEqual(_normalize_loaded_ruleset(loaded[name]), baseline)
+
     def test_legacy_ruleset_still_loads_with_params_and_model(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             ruleset_dir = Path(td)
@@ -469,6 +482,24 @@ def _write_json_ruleset(ruleset_dir: Path, payload: dict[str, object]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding='utf-8',
     )
+
+
+def _normalize_loaded_ruleset(loaded) -> dict[str, object]:
+    return {
+        'params': loaded.params,
+        'rules': [
+            {
+                'rule_id': config.rule_id,
+                'enabled': config.enabled,
+                'severity': (config.severity.value if config.severity is not None else None),
+                'params': config.params,
+                'applies_to': list(config.applies_to),
+                'title': config.title,
+                'clause': config.clause,
+            }
+            for config in loaded.rule_configs
+        ],
+    }
 
 
 def _write_table_ruleset(

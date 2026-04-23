@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import ezdxf
+from ezdxf import bbox as ezdxf_bbox
 
 from .cad.parse import CadParseOptions
 from .model.build_options import ModelBuildOptions
@@ -21,15 +22,37 @@ _FRAME_HINTS: dict[str, tuple[float, float, float, float]] = {
     "frame_a4l1v": (-25.0, -37.0, 185.0, 260.0),
 }
 _FRAME_ORDER = ("frame_a3l1hfl", "frame_a3l1vl", "frame_a4l1v")
-_CODE_RE = re.compile(r"\b[0-9A-Z]{2,}-[0-9A-Z-]+-\d{2}\b", re.IGNORECASE)
+_FRAME_NAME_ALIASES: dict[str, tuple[str, ...]] = {
+    "frame_a3l1hfl": ("擎能a3横",),
+    "frame_a3l1vl": ("擎能a3竖",),
+    "frame_a4l1v": ("擎能a4竖",),
+}
+_CODE_PATTERNS = (
+    re.compile(r"\b[0-9A-Z]{2,}(?:-[0-9A-Z]{1,})*-(?:\d{2,3}|[A-Z]\d{2,3})\b", re.IGNORECASE),
+)
 _PLACEHOLDER_RE = re.compile(r"(?:FXX|FXXX|XXX|XXXX|XX工程|暂命名)", re.IGNORECASE)
+_TITLE_GENERIC_LABELS = {
+    "图号",
+    "设计阶段",
+    "施工图",
+    "比例",
+    "日期",
+    "审核",
+    "校核",
+    "批准",
+    "设计",
+    "核定",
+    "会签",
+}
+_TITLE_STRONG_HINTS = ("单线图", "系统图", "平断面图", "示意图", "接线图", "走向图", "布置图", "安装图", "材料表", "目录")
+_TITLE_WEAK_HINTS = ("图", "表", "示意", "布置", "系统", "接线", "大样", "安装", "目录")
 
 
 @dataclass(frozen=True)
 class ReviewPipelineOutput:
     run_dir: Path
     drawing_info_json_path: Path
-    review_bundle_json_path: Path
+    review_rules_json_path: Path
     review_report_json_path: Path
     review_report_md_path: Path
     sparkflow_report_json_path: Path | None
@@ -37,6 +60,10 @@ class ReviewPipelineOutput:
     split_manifest_json_path: Path
     rectification_checklist_md_path: Path
     rectification_checklist_json_path: Path
+
+    @property
+    def review_bundle_json_path(self) -> Path:
+        return self.review_rules_json_path
 
 
 @dataclass(frozen=True)
@@ -113,7 +140,8 @@ def review_pipeline(
     checklist["split_manifest_json_path"] = str(split_manifest_json_path)
     checklist["review_report_json_path"] = str(review_output.review_report_json_path)
     checklist["drawing_info_json_path"] = str(review_output.drawing_info_json_path)
-    checklist["review_bundle_json_path"] = str(review_output.review_bundle_json_path)
+    checklist["review_rules_json_path"] = str(review_output.review_rules_json_path)
+    checklist["review_bundle_json_path"] = str(review_output.review_rules_json_path)
 
     rectification_checklist_md_path = review_output.run_dir / "整改问题清单.md"
     rectification_checklist_json_path = review_output.run_dir / "整改问题清单.json"
@@ -128,7 +156,7 @@ def review_pipeline(
     return ReviewPipelineOutput(
         run_dir=review_output.run_dir,
         drawing_info_json_path=review_output.drawing_info_json_path,
-        review_bundle_json_path=review_output.review_bundle_json_path,
+        review_rules_json_path=review_output.review_rules_json_path,
         review_report_json_path=review_output.review_report_json_path,
         review_report_md_path=review_output.review_report_md_path,
         sparkflow_report_json_path=review_output.sparkflow_report_json_path,
@@ -147,10 +175,20 @@ def split_review_pages(path: Path, out_dir: Path) -> Path:
     pages_dir.mkdir(parents=True, exist_ok=True)
 
     frames = _collect_frames(layout)
+    layout_texts, layout_lines = _collect_space_items(layout, space_name="layout")
+    layout_viewports = _collect_viewports(layout)
+    model_texts, model_lines = _collect_space_items(doc.modelspace(), space_name="model")
     directory_maps: dict[str, str] = {}
     frame_payloads: list[dict[str, Any]] = []
     for frame in frames:
-        payload = _build_page_payload(doc, layout, frame, pages_dir)
+        payload = _build_page_payload(
+            frame,
+            layout_texts=layout_texts,
+            layout_lines=layout_lines,
+            layout_viewports=layout_viewports,
+            model_texts=model_texts,
+            model_lines=model_lines,
+        )
         frame_payloads.append(payload)
         if frame.kind == "frame_a4l1v":
             directory_maps.update(_extract_directory_titles(payload["texts"]))
@@ -162,15 +200,18 @@ def split_review_pages(path: Path, out_dir: Path) -> Path:
         codes = payload["codes"]
         primary_code = _pick_primary_code(codes, directory_maps)
         sheet_no = None if payload["frame"].kind == "frame_a4l1v" else _infer_sheet_no([primary_code] if primary_code else codes)
+        page_seq = payload["frame"].seq
         title = directory_maps.get(primary_code, "") if primary_code else ""
         if not title:
-            title = _infer_page_title(payload["texts"], codes)
+            title = _infer_page_title(payload["texts"], codes, bbox=payload["frame"].bbox)
+        title_part_no, title_part_total = _infer_title_part(title)
         if payload["frame"].kind == "frame_a4l1v":
             directory_index += 1
             slug = f"directory_{directory_index}"
         else:
             resolved_code = primary_code or (codes[0] if codes else f"page_{payload['frame'].seq}")
-            prefix = f"{sheet_no:02d}_" if sheet_no is not None else ""
+            prefix_no = sheet_no if sheet_no is not None else page_seq
+            prefix = f"{prefix_no:02d}_"
             slug = f"{prefix}{resolved_code}"
         slug = _dedupe_slug(slug, used_slugs)
         svg_path = pages_dir / f"{slug}.svg"
@@ -202,6 +243,9 @@ def split_review_pages(path: Path, out_dir: Path) -> Path:
                 "slug": slug,
                 "seq": payload["frame"].seq,
                 "sheet_no": sheet_no,
+                "page_seq": page_seq,
+                "title_part_no": title_part_no,
+                "title_part_total": title_part_total,
                 "kind": payload["frame"].kind,
                 "primary_code": primary_code or (codes[0] if codes else ""),
                 "codes": codes,
@@ -236,6 +280,7 @@ def build_rectification_checklist(review_report: dict[str, Any], manifest: list[
         "review_dir": review_report.get("review_dir"),
         "review_report_json_path": review_report.get("review_report_json_path"),
         "drawing_info_json_path": review_report.get("drawing_info_json_path"),
+        "review_rules_json_path": review_report.get("review_rules_json_path"),
         "review_bundle_json_path": review_report.get("review_bundle_json_path"),
         "split_manifest_json_path": None,
         "summary": {
@@ -243,6 +288,7 @@ def build_rectification_checklist(review_report: dict[str, Any], manifest: list[
             "page_issue_count": len(page_issues),
             "review_issue_count": len(review_issues),
             "placeholder_text_count": placeholder_count,
+            "review_rule_counts": summary.get("review_rule_counts") or {},
             "requirement_counts": summary.get("requirement_counts") or {},
         },
         "page_issues": page_issues,
@@ -264,6 +310,12 @@ def render_rectification_checklist_markdown(checklist: dict[str, Any]) -> str:
     summary = checklist.get("summary") or {}
     for key in ("split_page_count", "page_issue_count", "review_issue_count", "placeholder_text_count"):
         lines.append(f"- {key}: {summary.get(key)}")
+    review_rule_counts = summary.get("review_rule_counts") or {}
+    if review_rule_counts:
+        lines.append(
+            "- review_rule_counts: "
+            + "；".join(f"{key}={value}" for key, value in review_rule_counts.items())
+        )
     requirement_counts = summary.get("requirement_counts") or {}
     if requirement_counts:
         lines.append(
@@ -285,17 +337,17 @@ def render_rectification_checklist_markdown(checklist: dict[str, Any]) -> str:
             lines.append(f"- 问题描述：{item['problem']}")
             lines.append(f"- 整改建议：{item['suggestion']}")
             lines.append("")
-    lines.append("## 3. 评审意见闭环情况")
+    lines.append("## 3. 评审规则审查情况")
     lines.append("")
     review_issues = checklist.get("review_issues") or []
     if not review_issues:
-        lines.append("无待跟踪评审意见。")
+        lines.append("无待跟踪评审规则。")
     else:
         for index, item in enumerate(review_issues, start=1):
             lines.append(f"### 3.{index} {item['title']}")
             lines.append("")
             lines.append(f"- 结果：{item['result']}")
-            lines.append(f"- 评审意见：{item['text']}")
+            lines.append(f"- 评审规则：{item['text']}")
             if item.get("reply"):
                 lines.append(f"- 回复：{item['reply']}")
             if item.get("related_pages"):
@@ -325,13 +377,15 @@ def _resolve_layout(doc: ezdxf.EzDxfDocument):
 
 def _collect_frames(layout) -> list[_FrameRef]:
     frames: list[_FrameRef] = []
+    block_bbox_cache: dict[str, tuple[float, float, float, float] | None] = {}
+    doc = getattr(layout, "doc", None)
     for entity in layout:
         if entity.dxftype() != "INSERT":
             continue
         kind = _frame_kind(str(entity.dxf.name))
         if not kind:
             continue
-        bbox = _frame_bbox(entity, kind)
+        bbox = _frame_bbox(entity, kind, doc=doc, block_bbox_cache=block_bbox_cache)
         frames.append(
             _FrameRef(
                 seq=0,
@@ -352,14 +406,30 @@ def _frame_kind(name: str) -> str | None:
     for key in _FRAME_ORDER:
         if key in lowered:
             return key
+    for kind, aliases in _FRAME_NAME_ALIASES.items():
+        if any(alias in lowered for alias in aliases):
+            return kind
     return None
 
 
-def _frame_bbox(insert, kind: str) -> tuple[float, float, float, float]:
-    min_x, min_y, max_x, max_y = _FRAME_HINTS[kind]
+def _frame_bbox(
+    insert,
+    kind: str,
+    *,
+    doc: ezdxf.EzDxfDocument | None,
+    block_bbox_cache: dict[str, tuple[float, float, float, float] | None],
+) -> tuple[float, float, float, float]:
     origin = insert.dxf.insert
     xscale = float(getattr(insert.dxf, "xscale", 1.0) or 1.0)
     yscale = float(getattr(insert.dxf, "yscale", 1.0) or 1.0)
+    block_name = str(insert.dxf.name)
+    cached_bbox = block_bbox_cache.get(block_name)
+    if cached_bbox is None and block_name not in block_bbox_cache:
+        cached_bbox = _resolve_block_frame_bbox(doc, block_name, kind)
+        block_bbox_cache[block_name] = cached_bbox
+    if cached_bbox is None:
+        cached_bbox = _FRAME_HINTS[kind]
+    min_x, min_y, max_x, max_y = cached_bbox
     x0 = float(origin[0]) + min_x * xscale
     y0 = float(origin[1]) + min_y * yscale
     x1 = float(origin[0]) + max_x * xscale
@@ -367,21 +437,59 @@ def _frame_bbox(insert, kind: str) -> tuple[float, float, float, float]:
     return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
 
 
-def _build_page_payload(doc: ezdxf.EzDxfDocument, layout, frame: _FrameRef, pages_dir: Path) -> dict[str, Any]:
+def _resolve_block_frame_bbox(
+    doc: ezdxf.EzDxfDocument | None,
+    block_name: str,
+    kind: str,
+) -> tuple[float, float, float, float] | None:
+    if doc is None:
+        return None
+    try:
+        block = doc.blocks.get(block_name)
+    except Exception:
+        return None
+    try:
+        extents = ezdxf_bbox.extents(block)
+    except Exception:
+        return None
+    min_x = float(extents.extmin.x)
+    min_y = float(extents.extmin.y)
+    max_x = float(extents.extmax.x)
+    max_y = float(extents.extmax.y)
+    expected = _FRAME_HINTS[kind]
+    expected_width = expected[2] - expected[0]
+    expected_height = expected[3] - expected[1]
+    actual_width = max_x - min_x
+    actual_height = max_y - min_y
+    tolerance = max(expected_width, expected_height) * 0.35
+    if abs(actual_width - expected_width) > tolerance or abs(actual_height - expected_height) > tolerance:
+        return None
+    return (min_x, min_y, max_x, max_y)
+
+
+def _build_page_payload(
+    frame: _FrameRef,
+    *,
+    layout_texts: list[_TextItem],
+    layout_lines: list[_LineItem],
+    layout_viewports: list[_ViewportRef],
+    model_texts: list[_TextItem],
+    model_lines: list[_LineItem],
+) -> dict[str, Any]:
     bbox = frame.bbox
-    texts = _collect_layout_texts(layout, bbox)
-    drawables: list[_TextItem | _LineItem] = _collect_layout_drawables(layout, bbox)
-    viewports = _collect_viewports(layout, bbox)
+    texts = [item for item in layout_texts if _point_in_bbox(item.x, item.y, bbox)]
+    drawables: list[_TextItem | _LineItem] = texts + [
+        item for item in layout_lines if _line_intersects_bbox(item, bbox)
+    ]
+    viewports = [
+        item for item in layout_viewports if _point_in_bbox(item.center_x, item.center_y, bbox)
+    ]
     if viewports:
-        viewport_texts, viewport_drawables = _collect_modelspace_payload(doc.modelspace(), viewports, bbox)
+        viewport_texts, viewport_drawables = _collect_modelspace_payload(model_texts, model_lines, viewports, bbox)
         texts = _dedupe_texts(texts + viewport_texts)
         drawables = drawables + viewport_drawables
     texts = sorted(texts, key=lambda item: (round(-item.y, 3), round(item.x, 3), item.text))
-    codes = []
-    for item in texts:
-        for match in _CODE_RE.findall(item.text):
-            if match not in codes:
-                codes.append(match)
+    codes = _extract_page_codes(texts, bbox=bbox, kind=frame.kind)
     return {
         "frame": frame,
         "texts": texts,
@@ -391,30 +499,19 @@ def _build_page_payload(doc: ezdxf.EzDxfDocument, layout, frame: _FrameRef, page
     }
 
 
-def _collect_layout_texts(layout, bbox: tuple[float, float, float, float]) -> list[_TextItem]:
+def _collect_space_items(space_obj, *, space_name: str) -> tuple[list[_TextItem], list[_LineItem]]:
     texts: list[_TextItem] = []
-    for entity in _iter_supported_entities(layout):
-        text_item = _entity_to_text_item(entity, space="layout")
+    lines: list[_LineItem] = []
+    for entity in _iter_supported_entities(space_obj):
+        text_item = _entity_to_text_item(entity, space=space_name)
         if text_item is None:
+            lines.extend(_entity_to_line_items(entity, None, space=space_name))
             continue
-        if _point_in_bbox(text_item.x, text_item.y, bbox):
-            texts.append(text_item)
-    return texts
+        texts.append(text_item)
+    return texts, lines
 
 
-def _collect_layout_drawables(layout, bbox: tuple[float, float, float, float]) -> list[_TextItem | _LineItem]:
-    items: list[_TextItem | _LineItem] = []
-    for entity in _iter_supported_entities(layout):
-        text_item = _entity_to_text_item(entity, space="layout")
-        if text_item is not None:
-            if _point_in_bbox(text_item.x, text_item.y, bbox):
-                items.append(text_item)
-            continue
-        items.extend(_entity_to_line_items(entity, bbox, space="layout"))
-    return items
-
-
-def _collect_viewports(layout, bbox: tuple[float, float, float, float]) -> list[_ViewportRef]:
+def _collect_viewports(layout, bbox: tuple[float, float, float, float] | None = None) -> list[_ViewportRef]:
     viewports: list[_ViewportRef] = []
     for entity in layout:
         if entity.dxftype() != "VIEWPORT":
@@ -423,12 +520,16 @@ def _collect_viewports(layout, bbox: tuple[float, float, float, float]) -> list[
         if status <= 1:
             continue
         center = getattr(entity.dxf, "center", None)
-        if center is None or not _point_in_bbox(float(center[0]), float(center[1]), bbox):
+        if center is None:
+            continue
+        center_x = float(center[0])
+        center_y = float(center[1])
+        if bbox is not None and not _point_in_bbox(center_x, center_y, bbox):
             continue
         viewports.append(
             _ViewportRef(
-                center_x=float(center[0]),
-                center_y=float(center[1]),
+                center_x=center_x,
+                center_y=center_y,
                 width=float(getattr(entity.dxf, "width", 0.0) or 0.0),
                 height=float(getattr(entity.dxf, "height", 0.0) or 0.0),
                 view_center_x=float(getattr(entity.dxf, "view_center_point", center)[0]),
@@ -440,25 +541,30 @@ def _collect_viewports(layout, bbox: tuple[float, float, float, float]) -> list[
     return viewports
 
 
-def _collect_modelspace_payload(modelspace, viewports: list[_ViewportRef], bbox: tuple[float, float, float, float]) -> tuple[list[_TextItem], list[_TextItem | _LineItem]]:
+def _collect_modelspace_payload(
+    model_texts: list[_TextItem],
+    model_lines: list[_LineItem],
+    viewports: list[_ViewportRef],
+    bbox: tuple[float, float, float, float],
+) -> tuple[list[_TextItem], list[_TextItem | _LineItem]]:
     texts: list[_TextItem] = []
     drawables: list[_TextItem | _LineItem] = []
     for viewport in viewports:
         model_bbox = _viewport_model_bbox(viewport)
         scale = viewport.height / viewport.view_height if viewport.view_height else 1.0
-        for entity in _iter_supported_entities(modelspace):
-            text_item = _entity_to_text_item(entity, space="model")
-            if text_item is not None:
-                if _point_in_bbox(text_item.x, text_item.y, model_bbox):
-                    mapped = _map_text_to_viewport(text_item, viewport, scale)
-                    if _point_in_bbox(mapped.x, mapped.y, bbox):
-                        texts.append(mapped)
-                        drawables.append(mapped)
+        for text_item in model_texts:
+            if not _point_in_bbox(text_item.x, text_item.y, model_bbox):
                 continue
-            for line in _entity_to_line_items(entity, model_bbox, space="model"):
-                mapped = _map_line_to_viewport(line, viewport, scale)
-                if _line_intersects_bbox(mapped, bbox):
-                    drawables.append(mapped)
+            mapped = _map_text_to_viewport(text_item, viewport, scale)
+            if _point_in_bbox(mapped.x, mapped.y, bbox):
+                texts.append(mapped)
+                drawables.append(mapped)
+        for line in model_lines:
+            if not _line_intersects_bbox(line, model_bbox):
+                continue
+            mapped = _map_line_to_viewport(line, viewport, scale)
+            if _line_intersects_bbox(mapped, bbox):
+                drawables.append(mapped)
     return _dedupe_texts(texts), drawables
 
 
@@ -512,7 +618,12 @@ def _entity_to_text_item(entity, *, space: str) -> _TextItem | None:
     )
 
 
-def _entity_to_line_items(entity, bbox: tuple[float, float, float, float], *, space: str) -> list[_LineItem]:
+def _entity_to_line_items(
+    entity,
+    bbox: tuple[float, float, float, float] | None,
+    *,
+    space: str,
+) -> list[_LineItem]:
     kind = entity.dxftype()
     items: list[_LineItem] = []
     if kind == "LINE":
@@ -521,7 +632,9 @@ def _entity_to_line_items(entity, bbox: tuple[float, float, float, float], *, sp
         if start is None or end is None:
             return items
         candidate = _LineItem(float(start[0]), float(start[1]), float(end[0]), float(end[1]), space)
-        return [candidate] if _line_intersects_bbox(candidate, bbox) else []
+        if bbox is None or _line_intersects_bbox(candidate, bbox):
+            return [candidate]
+        return []
     if kind == "LWPOLYLINE":
         try:
             points = [(float(x), float(y)) for x, y, *_ in entity.get_points("xy")]
@@ -539,7 +652,7 @@ def _entity_to_line_items(entity, bbox: tuple[float, float, float, float], *, sp
 
 def _polyline_to_lines(
     points: list[tuple[float, float]],
-    bbox: tuple[float, float, float, float],
+    bbox: tuple[float, float, float, float] | None,
     *,
     space: str,
     closed: bool,
@@ -553,6 +666,8 @@ def _polyline_to_lines(
         _LineItem(start[0], start[1], end[0], end[1], space)
         for start, end in segments
     ]
+    if bbox is None:
+        return lines
     return [item for item in lines if _line_intersects_bbox(item, bbox)]
 
 
@@ -591,7 +706,7 @@ def _map_point_to_viewport(x: float, y: float, viewport: _ViewportRef, scale: fl
 
 def _extract_directory_titles(texts: list[_TextItem]) -> dict[str, str]:
     mapping: dict[str, str] = {}
-    codes = [item for item in texts if _CODE_RE.fullmatch(item.text)]
+    codes = [item for item in texts if _is_code_text(item.text)]
     titles = [item for item in texts if _looks_like_title(item.text)]
     for code in codes:
         candidates = [
@@ -617,31 +732,126 @@ def _pick_primary_code(codes: list[str], directory_maps: dict[str, str]) -> str:
     for code in codes:
         if code in directory_maps:
             return code
-    for code in codes:
-        if code.startswith("47-"):
-            return code
-    for code in codes:
-        if "-P" in code:
-            return code
-    return codes[0] if codes else ""
+    ranked = sorted(codes, key=_code_priority, reverse=True)
+    return ranked[0] if ranked else ""
 
 
-def _infer_page_title(texts: list[_TextItem], codes: list[str]) -> str:
+def _infer_page_title(
+    texts: list[_TextItem],
+    codes: list[str],
+    *,
+    bbox: tuple[float, float, float, float] | None = None,
+) -> str:
     code_set = set(codes)
-    candidates = [item.text for item in texts if _looks_like_title(item.text) and item.text not in code_set]
+    candidates = [item for item in texts if _looks_like_title(item.text) and item.text not in code_set]
+    if bbox is not None:
+        title_band_candidates = [item for item in candidates if _is_in_title_band(item, bbox)]
+        if title_band_candidates:
+            candidates = title_band_candidates
     if not candidates:
         return ""
-    ranked = sorted(candidates, key=lambda value: (len(value), value))
-    return ranked[0]
+    ranked = sorted(candidates, key=_title_priority, reverse=True)
+    return ranked[0].text
 
 
 def _looks_like_title(text: str) -> bool:
     stripped = str(text or "").strip()
-    if not stripped or _CODE_RE.fullmatch(stripped):
+    if not stripped or _is_code_text(stripped):
         return False
     if _PLACEHOLDER_RE.search(stripped):
         return False
-    return any(token in stripped for token in ("图", "表", "示意", "布置", "系统", "接线", "大样", "安装", "目录"))
+    if _normalized_text(stripped) in _TITLE_GENERIC_LABELS:
+        return False
+    return any(token in stripped for token in _TITLE_WEAK_HINTS)
+
+
+def _extract_page_codes(
+    texts: list[_TextItem],
+    *,
+    bbox: tuple[float, float, float, float],
+    kind: str,
+) -> list[str]:
+    if kind != "frame_a4l1v":
+        title_band_codes = _extract_codes_from_items(item for item in texts if _is_in_title_band(item, bbox))
+        if title_band_codes:
+            return title_band_codes
+    return _extract_codes_from_items(texts)
+
+
+def _extract_codes_from_items(items: Iterable[_TextItem]) -> list[str]:
+    codes: list[str] = []
+    for item in items:
+        for match in _find_code_matches(item.text):
+            if match not in codes:
+                codes.append(match)
+    return codes
+
+
+def _find_code_matches(text: str) -> list[str]:
+    value = str(text or "").strip()
+    if not value:
+        return []
+    matches: list[str] = []
+    for pattern in _CODE_PATTERNS:
+        for match in pattern.finditer(value):
+            candidate = match.group(0).strip()
+            if candidate not in matches:
+                matches.append(candidate)
+    return matches
+
+
+def _is_code_text(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    return any(pattern.fullmatch(value) for pattern in _CODE_PATTERNS)
+
+
+def _code_priority(code: str) -> tuple[int, int, int]:
+    value = str(code or "").strip().upper()
+    hyphen_count = value.count("-")
+    score = len(value)
+    if re.fullmatch(r"[0-9A-Z]{8,}-[A-Z]\d{2,3}", value):
+        score += 80
+    if any(value.startswith(prefix) for prefix in ("CSG-", "GD-", "4K-", "035")):
+        score += 40
+    if hyphen_count >= 3:
+        score += hyphen_count * 6
+    if re.search(r"[A-Z]", value) and re.search(r"\d", value):
+        score += 10
+    return score, hyphen_count, len(value)
+
+
+def _title_priority(item: _TextItem) -> tuple[int, int, float]:
+    text = str(item.text or "").strip()
+    normalized = _normalized_text(text)
+    score = len(normalized)
+    if any(token in normalized for token in _TITLE_STRONG_HINTS):
+        score += 120
+    if re.search(r"\d+/\d+", normalized):
+        score += 30
+    if any(token in normalized for token in ("改造前", "改造后", "一次接线", "单线")):
+        score += 20
+    if normalized in _TITLE_GENERIC_LABELS:
+        score -= 1000
+    return score, len(normalized), -item.y
+
+
+def _is_in_title_band(item: _TextItem, bbox: tuple[float, float, float, float]) -> bool:
+    band_height = max((bbox[3] - bbox[1]) * 0.16, 42.0)
+    return bbox[1] <= item.y <= bbox[1] + band_height
+
+
+def _normalized_text(text: str) -> str:
+    return "".join(str(text or "").split())
+
+
+def _infer_title_part(title: str) -> tuple[int | None, int | None]:
+    normalized = _normalized_text(title)
+    match = re.search(r"(\d+)\s*/\s*(\d+)", normalized)
+    if not match:
+        return None, None
+    return int(match.group(1)), int(match.group(2))
 
 
 def _dedupe_texts(items: list[_TextItem]) -> list[_TextItem]:
@@ -695,8 +905,9 @@ def _build_page_issues(manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
         issues.append(
             {
                 "sheet_no": page.get("sheet_no"),
+                "page_seq": page.get("page_seq"),
                 "code": page.get("primary_code") or code,
-                "page_label": f"{page.get('sheet_no') or '-'} {title}".strip(),
+                "page_label": f"{_page_index_label(page)} {title}".strip(),
                 "problem": "存在占位符或未定稿文本：" + "；".join(placeholders),
                 "suggestion": "将占位符、临时命名和未定稿编号替换为正式线路名称、间隔号和设备名称后再出图。",
                 "texts_path": page.get("texts_path"),
@@ -710,16 +921,16 @@ def _build_page_issues(manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _build_review_issues(review_report: dict[str, Any], manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
-    for item in review_report.get("requirements") or []:
+    for item in review_report.get("review_rule_results") or []:
         result = str(item.get("result") or "")
-        if result == "evidence_found":
+        if result == "passed":
             continue
         related_pages = _match_related_pages(item, manifest)
         issues.append(
             {
-                "title": f"{item.get('source_type', '')}-{item.get('item_no', '')}",
+                "title": f"{item.get('rule_id', '')}",
                 "result": result,
-                "text": item.get("text") or "",
+                "text": item.get("source_text") or "",
                 "reply": item.get("reply") or "",
                 "related_pages": related_pages,
                 "explanation": item.get("explanation") or "",
@@ -738,9 +949,19 @@ def _match_related_pages(item: dict[str, Any], manifest: list[dict[str, Any]]) -
         haystacks.extend(str(value) for value in (page.get("codes") or []))
         text = " ".join(haystacks)
         if any(keyword in text for keyword in keywords):
-            label = f"{page.get('sheet_no') or '-'} {page.get('title') or page.get('slug')}"
+            label = f"{_page_index_label(page)} {page.get('title') or page.get('slug')}"
             related.append(label)
     return related
+
+
+def _page_index_label(page: dict[str, Any]) -> str:
+    value = page.get("page_seq")
+    if isinstance(value, int):
+        return str(value)
+    value = page.get("sheet_no")
+    if isinstance(value, int):
+        return str(value)
+    return "-"
 
 
 def _write_page_svg(
