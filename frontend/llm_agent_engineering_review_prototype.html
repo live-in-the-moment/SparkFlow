@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>基于大模型和智能体的工程设计评审系统 - 交互原型</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fbff;
+      --primary: #2264e5;
+      --primary-dark: #1649ad;
+      --primary-soft: #e8f0ff;
+      --accent: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #7c3aed;
+      --text: #172033;
+      --muted: #64748b;
+      --line: #dbe4f0;
+      --shadow: 0 14px 40px rgba(15, 23, 42, .09);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: linear-gradient(135deg, #eef5ff 0%, #f8fafc 45%, #eefdf8 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 278px 1fr;
+      min-height: 100vh;
+    }
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 24px 18px;
+      overflow-y: auto;
+      box-shadow: 12px 0 30px rgba(15, 23, 42, .18);
+    }
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 24px;
+      padding: 12px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(34, 100, 229, .25), rgba(16, 185, 129, .16));
+      border: 1px solid rgba(226, 232, 240, .12);
+    }
+    .brand-logo {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #3b82f6, #10b981);
+      font-size: 22px;
+      box-shadow: 0 8px 20px rgba(34, 100, 229, .35);
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.25;
+      letter-spacing: .2px;
+    }
+    .brand small {
+      color: #94a3b8;
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+    }
+    nav {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .nav-btn {
+      width: 100%;
+      border: 0;
+      color: #cbd5e1;
+      background: transparent;
+      padding: 12px 14px;
+      border-radius: 13px;
+      text-align: left;
+      font-size: 14px;
+      cursor: pointer;
+      transition: .2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-btn:hover { background: rgba(148, 163, 184, .12); color: #fff; }
+    .nav-btn.active {
+      background: linear-gradient(135deg, rgba(59, 130, 246, .30), rgba(16, 185, 129, .22));
+      color: #fff;
+      box-shadow: inset 0 0 0 1px rgba(226, 232, 240, .12);
+    }
+    .nav-left { display: inline-flex; align-items: center; gap: 10px; }
+    .nav-kpi {
+      color: #93c5fd;
+      font-size: 11px;
+      background: rgba(59, 130, 246, .14);
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+    .aside-card {
+      margin-top: 24px;
+      padding: 15px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, .52);
+      border: 1px solid rgba(226, 232, 240, .10);
+    }
+    .aside-card h3 { margin: 0 0 8px; font-size: 13px; color: #fff; }
+    .aside-card p { margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.65; }
+    main {
+      padding: 28px;
+      overflow: hidden;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    .title h2 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: -.5px;
+    }
+    .title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      max-width: 900px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    button, .chip {
+      font-family: inherit;
+    }
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .2s ease;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(34, 100, 229, .28);
+    }
+    .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .btn-secondary:hover { border-color: #b6c5d9; transform: translateY(-1px); }
+    .btn-soft {
+      background: var(--primary-soft);
+      color: var(--primary-dark);
+    }
+    .section { display: none; animation: fade .22s ease; }
+    .section.active { display: block; }
+    @keyframes fade {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .grid { display: grid; gap: 18px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card {
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid rgba(219, 228, 240, .92);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      backdrop-filter: blur(8px);
+    }
+    .card.compact { padding: 16px; }
+    .card-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .card-title h3 {
+      margin: 0;
+      font-size: 17px;
+    }
+    .card-title span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .stat .icon {
+      width: 48px; height: 48px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: var(--primary-soft);
+      font-size: 22px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 28px;
+      line-height: 1;
+      letter-spacing: -.8px;
+    }
+    .stat small {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .pill, .risk {
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pill.blue { background: #e8f0ff; color: #1d4ed8; }
+    .pill.green { background: #dcfce7; color: #15803d; }
+    .pill.yellow { background: #fef3c7; color: #a16207; }
+    .pill.red { background: #fee2e2; color: #b91c1c; }
+    .pill.purple { background: #ede9fe; color: #6d28d9; }
+    .muted { color: var(--muted); }
+    .architecture {
+      display: grid;
+      gap: 12px;
+    }
+    .arch-layer {
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      padding: 14px;
+      background: var(--panel-2);
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+    .arch-layer strong { font-size: 14px; }
+    .arch-items {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .arch-items span {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 7px 10px;
+      color: #334155;
+      font-size: 12px;
+    }
+    .flow-arrow {
+      text-align: center;
+      color: var(--muted);
+      font-size: 18px;
+      margin: -6px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 800;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .upload-zone {
+      border: 2px dashed #b6c5d9;
+      border-radius: 18px;
+      padding: 28px;
+      background: linear-gradient(135deg, #f8fbff, #ffffff);
+      text-align: center;
+      transition: .2s ease;
+      cursor: pointer;
+    }
+    .upload-zone:hover {
+      border-color: var(--primary);
+      background: #f6f9ff;
+    }
+    .upload-zone .big {
+      font-size: 38px;
+      display: block;
+      margin-bottom: 10px;
+    }
+    .project {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding: 15px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #fff;
+      margin-bottom: 12px;
+    }
+    .project h4 { margin: 0 0 6px; font-size: 15px; }
+    .project p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .agent {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 18px;
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .agent::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: #cbd5e1;
+    }
+    .agent.running::before { background: linear-gradient(90deg, var(--primary), var(--accent)); }
+    .agent.done::before { background: var(--accent); }
+    .agent.warn::before { background: var(--warning); }
+    .agent h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+    .agent p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .progress {
+      height: 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+    .progress > div {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      transition: width .4s ease;
+    }
+    .agent small { display: block; color: var(--muted); margin-top: 8px; font-size: 11px; }
+    .console {
+      height: 280px;
+      overflow-y: auto;
+      background: #07111f;
+      color: #d8ecff;
+      border-radius: 18px;
+      padding: 15px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.75;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .console .t { color: #93c5fd; }
+    .console .ok { color: #86efac; }
+    .console .warn { color: #fde68a; }
+    .console .err { color: #fca5a5; }
+    .risk-list {
+      display: grid;
+      gap: 12px;
+    }
+    .risk-item {
+      border: 1px solid var(--line);
+      border-left: 5px solid #cbd5e1;
+      background: #fff;
+      border-radius: 15px;
+      padding: 14px 15px;
+    }
+    .risk-item.major { border-left-color: var(--danger); }
+    .risk-item.normal { border-left-color: var(--warning); }
+    .risk-item.suggest { border-left-color: var(--primary); }
+    .risk-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .risk-head h4 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .risk-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.75;
+    }
+    .risk.major { background: #fee2e2; color: #b91c1c; }
+    .risk.normal { background: #fef3c7; color: #a16207; }
+    .risk.suggest { background: #e8f0ff; color: #1d4ed8; }
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+      gap: 18px;
+    }
+    .search-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font-family: inherit;
+      outline: none;
+      background: #fff;
+      color: var(--text);
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(34, 100, 229, .10); }
+    .kb-result {
+      padding: 14px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      margin-bottom: 10px;
+    }
+    .kb-result h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .kb-result p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 48px;
+      gap: 10px;
+      align-items: center;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+    .bar {
+      height: 10px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), #60a5fa);
+      border-radius: inherit;
+    }
+    .timeline {
+      display: grid;
+      gap: 13px;
+    }
+    .stage {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 15px;
+      background: #fff;
+    }
+    .stage-time {
+      font-weight: 900;
+      color: var(--primary-dark);
+      background: var(--primary-soft);
+      border-radius: 12px;
+      padding: 10px;
+      text-align: center;
+      align-self: start;
+    }
+    .stage h4 { margin: 0 0 8px; font-size: 15px; }
+    .stage p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .scenario-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      min-height: 190px;
+    }
+    .scenario-card h4 { margin: 0 0 10px; }
+    .scenario-card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+    .report-cover {
+      padding: 24px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #0f172a, #1e3a8a 55%, #065f46);
+      color: #fff;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow);
+    }
+    .report-cover h3 { margin: 0 0 8px; font-size: 22px; }
+    .report-cover p { margin: 0; color: #dbeafe; line-height: 1.7; font-size: 13px; }
+    .report-meta {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .report-meta span {
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 999px;
+      padding: 6px 11px;
+      font-size: 12px;
+    }
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.75;
+    }
+    .badge {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+    .badge.green { background: var(--accent); }
+    .badge.yellow { background: var(--warning); }
+    .badge.red { background: var(--danger); }
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      min-width: 260px;
+      max-width: 420px;
+      background: #0f172a;
+      color: #fff;
+      padding: 14px 16px;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(15, 23, 42, .28);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: .25s ease;
+      z-index: 50;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .mini-code {
+      font-family: var(--mono);
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: #334155;
+    }
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 1fr; }
+      aside { position: relative; height: auto; }
+      nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-4, .agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-3, .grid-2, .split { grid-template-columns: 1fr; }
+      header { flex-direction: column; }
+      .header-actions { justify-content: flex-start; }
+    }
+    @media (max-width: 640px) {
+      main { padding: 18px; }
+      nav { grid-template-columns: 1fr; }
+      .grid-4, .agent-grid { grid-template-columns: 1fr; }
+      .arch-layer, .stage { grid-template-columns: 1fr; }
+      .project { grid-template-columns: 1fr; }
+      .title h2 { font-size: 22px; }
+    }
+    @media print {
+      aside, .header-actions, .btn, .search-box { display: none !important; }
+      .app { grid-template-columns: 1fr; }
+      body { background: #fff; }
+      main { padding: 0; }
+      .section { display: block !important; page-break-after: always; }
+      .card { box-shadow: none; border-color: #ddd; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <h1>智审电力<br><small>LLM + Multi-Agent Review</small></h1>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-btn active" data-section="dashboard"><span class="nav-left">📊 总览仪表板</span><span class="nav-kpi">Demo</span></button>
+      <button class="nav-btn" data-section="projects"><span class="nav-left">📁 项目中心</span><span class="nav-kpi">3</span></button>
+      <button class="nav-btn" data-section="workbench"><span class="nav-left">🤖 智能评审台</span><span class="nav-kpi">7+1</span></button>
+      <button class="nav-btn" data-section="report"><span class="nav-left">🧾 评审报告</span><span class="nav-kpi">PDF</span></button>
+      <button class="nav-btn" data-section="knowledge"><span class="nav-left">📚 规范知识库</span><span class="nav-kpi">RAG</span></button>
+      <button class="nav-btn" data-section="roadmap"><span class="nav-left">🧭 实施路线</span><span class="nav-kpi">4阶段</span></button>
+    </nav>
+    <div class="aside-card">
+      <h3>系统定位</h3>
+      <p>不是“AI聊天机器人”，而是面向电力设计院的工程设计自动评审、问题闭环和知识资产沉淀平台。</p>
+    </div>
+    <div class="aside-card">
+      <h3>可信原则</h3>
+      <p>所有AI评审意见必须带：规范依据、图纸定位、风险等级、整改建议、人工确认记录。</p>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div class="title">
+        <h2 id="pageTitle">基于大模型和智能体的工程设计评审系统</h2>
+        <p id="pageDesc">融合“产品完整度 + 电力专业深度”的交互式方案：以项目流程为骨架，以电气一次/二次、土建、线路等专业智能体为核心，以RAG、图纸解析、造价异常检测和人工复核构成可信闭环。</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="window.print()">🖨️ 打印方案</button>
+        <button class="btn btn-soft" onclick="showToast('已复制演示说明：该原型为静态HTML，可作为立项汇报与需求评审材料。')">📋 复制说明</button>
+        <button class="btn btn-primary" onclick="goWorkbenchAndRun()">▶ 启动评审演示</button>
+      </div>
+    </header>
+
+    <section id="dashboard" class="section active">
+      <div class="grid grid-4">
+        <div class="card compact"><div class="stat"><div class="icon">📁</div><div><strong>32</strong><small>在库设计项目</small></div></div></div>
+        <div class="card compact"><div class="stat"><div class="icon">⏱️</div><div><strong>1.8天</strong><small>模拟平均评审周期</small></div></div></div>
+        <div class="card compact"><div class="stat"><div class="icon">⚠️</div><div><strong id="majorKpi">7</strong><small>重大/高风险问题</small></div></div></div>
+        <div class="card compact"><div class="stat"><div class="icon">📚</div><div><strong>12,680</strong><small>规范条文切片</small></div></div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px;">
+        <div class="card">
+          <div class="card-title">
+            <h3>五层系统架构</h3>
+            <span>产品框架 + 专业深度融合</span>
+          </div>
+          <div class="architecture">
+            <div class="arch-layer">
+              <strong>① 用户交互层</strong>
+              <div class="arch-items"><span>仪表板</span><span>项目中心</span><span>智能评审台</span><span>报告中心</span><span>知识库</span></div>
+            </div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">
+              <strong>② 智能体编排层</strong>
+              <div class="arch-items"><span>LangGraph状态图</span><span>并行节点</span><span>汇聚节点</span><span>人工介入条件边</span></div>
+            </div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">
+              <strong>③ 专业智能体层</strong>
+              <div class="arch-items"><span>电气一次</span><span>电气二次</span><span>土建</span><span>线路</span><span>规范</span><span>造价</span><span>安全</span><span>主审</span></div>
+            </div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">
+              <strong>④ 模型与知识层</strong>
+              <div class="arch-items"><span>领域大模型</span><span>多模态模型</span><span>RAG</span><span>知识图谱</span><span>评审意见库</span></div>
+            </div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">
+              <strong>⑤ 工具与数据层</strong>
+              <div class="arch-items"><span>CAD/PDF解析</span><span>OCR</span><span>向量库</span><span>造价库</span><span>历史项目库</span><span>权限审计</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <h3>评审能力雷达</h3>
+            <span>示例成熟度评分</span>
+          </div>
+          <div class="bar-row"><span>规范合规</span><div class="bar"><span style="width:88%"></span></div><b>88</b></div>
+          <div class="bar-row"><span>图纸解析</span><div class="bar"><span style="width:62%"></span></div><b>62</b></div>
+          <div class="bar-row"><span>造价异常</span><div class="bar"><span style="width:78%"></span></div><b>78</b></div>
+          <div class="bar-row"><span>安全风险</span><div class="bar"><span style="width:82%"></span></div><b>82</b></div>
+          <div class="bar-row"><span>跨专业冲突</span><div class="bar"><span style="width:69%"></span></div><b>69</b></div>
+          <div class="bar-row"><span>证据链追溯</span><div class="bar"><span style="width:91%"></span></div><b>91</b></div>
+          <div class="footer-note">说明：图纸解析通常是落地难点，建议第一阶段先做设计说明书、设备表、工程量清单和PDF图纸的半结构化评审，再扩展到DWG拓扑解析。</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <div class="card-title">
+          <h3>7+1 智能体设计</h3>
+          <span>既贴合设计院专业室，又保留通用评审能力</span>
+        </div>
+        <table>
+          <thead><tr><th>智能体</th><th>主要职责</th><th>关键输入</th><th>输出证据</th></tr></thead>
+          <tbody>
+            <tr><td><b>电气一次Agent</b></td><td>主接线可靠性、设备选型、短路电流水平、间隔配置一致性</td><td>一次接线图、设备表、短路计算书</td><td>设备参数比对、图纸定位、规范/企业标准引用</td></tr>
+            <tr><td><b>电气二次Agent</b></td><td>继电保护、自动化、通信接口、二次回路完整性</td><td>保护配置表、二次图、通信方案</td><td>配置缺项、回路冲突、保护逻辑风险</td></tr>
+            <tr><td><b>土建Agent</b></td><td>结构荷载、基础布置、抗震设防、设备基础与电气图一致性</td><td>土建平面图、结构说明、地勘资料</td><td>坐标/尺寸冲突、荷载风险、整改建议</td></tr>
+            <tr><td><b>线路Agent</b></td><td>路径、杆塔、导线力学、交叉跨越和走廊约束</td><td>路径图、杆塔明细、线路设计说明</td><td>跨越风险、路径冲突、工程量异常</td></tr>
+            <tr><td><b>规范合规Agent</b></td><td>强制性条文、行业规范、企业标准和历史评审意见检索</td><td>设计成果文本、条文库、标准版本</td><td>条文编号、原文、适用条件、置信度</td></tr>
+            <tr><td><b>造价分析Agent</b></td><td>工程量清单抽取、历史项目对比、单价/数量异常检测</td><td>Excel清单、设备数量、历史造价库</td><td>异常项、偏离比例、参考项目</td></tr>
+            <tr><td><b>安全评估Agent</b></td><td>电气安全距离、接地、消防通道、运维安全风险</td><td>总平面图、接地图、消防说明</td><td>风险等级、影响范围、整改优先级</td></tr>
+            <tr><td><b>主审Agent</b></td><td>汇总、冲突仲裁、评分定级、报告生成、人工复核流转</td><td>各Agent意见、项目元数据、审批规则</td><td>结构化评审报告、闭环台账、审计记录</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="projects" class="section">
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">
+            <h3>项目创建与文件上传</h3>
+            <span>支持CAD / PDF / Word / Excel</span>
+          </div>
+          <div class="upload-zone" onclick="showToast('演示模式：已模拟上传 DWG、PDF、设计说明书和工程量清单。')">
+            <span class="big">☁️</span>
+            <b>拖拽上传设计成果包</b>
+            <p class="muted" style="margin:8px 0 0;">建议文件：一次接线图、总平面图、设备材料表、设计说明、工程量清单、计算书。</p>
+          </div>
+          <div class="grid grid-2" style="margin-top:14px;">
+            <input placeholder="项目名称：如 珠海110kV输变电工程"/>
+            <select><option>输变电工程</option><option>新能源接入工程</option><option>储能电站接入</option><option>配网技改修理</option></select>
+          </div>
+          <textarea style="margin-top:12px; min-height:92px;" placeholder="评审关注点：如 电气一次设备选型、土建基础一致性、造价偏离、消防通道等"></textarea>
+          <button class="btn btn-primary" style="margin-top:12px;" onclick="showToast('项目已创建：等待智能预审。')">＋ 创建项目</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <h3>项目列表</h3>
+            <span>状态与风险概览</span>
+          </div>
+          <div class="project">
+            <div><h4>珠海110kV景林输变电工程 初设评审</h4><p>文件：DWG 12份、PDF 8份、说明书 1份、清单 1份；当前状态：智能评审中</p></div>
+            <span class="pill yellow">评审中</span>
+          </div>
+          <div class="project">
+            <div><h4>220kV新能源项目配套送出线路 可研评审</h4><p>文件：路径图、杆塔表、可研报告、投资估算；当前状态：待人工复核</p></div>
+            <span class="pill red">高风险3项</span>
+          </div>
+          <div class="project">
+            <div><h4>电网侧独立储能电站接入 EPC方案评审</h4><p>文件：接入系统方案、设备表、消防说明、清单；当前状态：已完成</p></div>
+            <span class="pill green">已完成</span>
+          </div>
+          <button class="btn btn-secondary" onclick="goWorkbenchAndRun()">选择首个项目并启动演示</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <div class="card-title">
+          <h3>项目文件解析流水线</h3>
+          <span>把非结构化设计成果转为可评审数据</span>
+        </div>
+        <table>
+          <thead><tr><th>输入文件</th><th>解析方式</th><th>结构化结果</th><th>质量控制</th></tr></thead>
+          <tbody>
+            <tr><td>DWG / CAD图纸</td><td>矢量图元解析 + 图层语义映射</td><td>设备节点、连接关系、坐标、标注、图签</td><td>图层白名单、图签完整率、人工抽样校核</td></tr>
+            <tr><td>PDF图纸</td><td>OCR + 版面分析 + 多模态识别</td><td>页码、图号、设备编号、尺寸、批注</td><td>低置信度字段标红，要求人工确认</td></tr>
+            <tr><td>Word设计说明</td><td>NLP章节识别 + 参数抽取</td><td>电压等级、规模、方案边界、设计假设</td><td>与图纸/清单交叉校验</td></tr>
+            <tr><td>Excel工程量清单</td><td>表头识别 + 单位归一化 + 物料编码映射</td><td>设备数量、单价、合价、专业类别</td><td>同类项目对标、异常值检测</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="workbench" class="section">
+      <div class="card">
+        <div class="card-title">
+          <h3>多智能体协同评审工作台</h3>
+          <span>点击“启动评审演示”观察并行评审、汇聚仲裁与风险输出</span>
+        </div>
+        <div class="agent-grid" id="agentGrid"></div>
+        <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="startReview()">▶ 启动评审演示</button>
+          <button class="btn btn-secondary" onclick="resetReview()">↺ 重置</button>
+          <button class="btn btn-soft" onclick="manualIntervention()">👤 触发人工介入</button>
+        </div>
+      </div>
+
+      <div class="split" style="margin-top:18px;">
+        <div class="card">
+          <div class="card-title">
+            <h3>评审运行日志</h3>
+            <span>模拟LangGraph事件流</span>
+          </div>
+          <div class="console" id="console"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">
+            <h3>实时问题发现</h3>
+            <span id="issueCounter">已发现 0 项</span>
+          </div>
+          <div class="risk-list" id="liveRisks">
+            <div class="risk-item suggest"><div class="risk-head"><h4>等待评审启动</h4><span class="risk suggest">提示</span></div><p>启动后，各专业Agent会并行输出问题，并由主审Agent进行合并、去重和风险定级。</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="report" class="section">
+      <div class="report-cover">
+        <h3>工程设计智能评审报告（样例）</h3>
+        <p>项目：珠海110kV景林输变电工程初设评审。报告由多智能体系统生成，需经注册工程师/专业负责人复核确认后作为正式评审意见。</p>
+        <div class="report-meta">
+          <span>评审模型：可插拔私有模型网关</span>
+          <span>智能体：7+1</span>
+          <span>知识库版本：企业规范库 v0.9</span>
+          <span>生成时间：演示环境</span>
+        </div>
+      </div>
+
+      <div class="grid grid-3">
+        <div class="card compact"><div class="stat"><div class="icon">🚨</div><div><strong id="reportMajor">2</strong><small>重大问题</small></div></div></div>
+        <div class="card compact"><div class="stat"><div class="icon">⚠️</div><div><strong id="reportNormal">5</strong><small>一般问题</small></div></div></div>
+        <div class="card compact"><div class="stat"><div class="icon">💡</div><div><strong id="reportSuggest">8</strong><small>优化建议</small></div></div></div>
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <div class="card-title">
+          <h3>结构化评审意见</h3>
+          <span>可导出为Word/PDF或同步到OA流程</span>
+        </div>
+        <table>
+          <thead><tr><th>等级</th><th>专业</th><th>问题描述</th><th>证据链</th><th>整改建议</th></tr></thead>
+          <tbody>
+            <tr><td><span class="risk major">重大</span></td><td>电气一次</td><td>设备参数表与一次接线图中的主变容量描述不一致，可能影响短路电流水平与保护配置。</td><td>设备表第2页；一次图A-01；规范库命中示例条文</td><td>统一主变容量参数，重新校核短路电流和设备开断能力。</td></tr>
+            <tr><td><span class="risk normal">一般</span></td><td>土建/电气</td><td>GIS室设备基础坐标与电气布置图存在偏差，需复核安装净距。</td><td>土建平面T-03；电气平面E-05；图元坐标差异</td><td>由土建专业牵头，电气一次复核设备基础与检修通道。</td></tr>
+            <tr><td><span class="risk normal">一般</span></td><td>造价</td><td>部分电缆工程量较同类型项目偏离较大，需解释路径长度或备用量依据。</td><td>清单第18行；历史项目P-2024-07；偏离阈值±20%</td><td>补充电缆路径计算书，必要时调整工程量。</td></tr>
+            <tr><td><span class="risk suggest">建议</span></td><td>规范合规</td><td>设计说明中部分规范版本未注明发布日期，后续审计追溯不完整。</td><td>设计说明第1章；规范版本字段缺失</td><td>补充规范版本号、生效日期和企业标准引用关系。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px;">
+        <div class="card">
+          <div class="card-title"><h3>问题闭环状态</h3><span>样例</span></div>
+          <div class="bar-row"><span>待整改</span><div class="bar"><span style="width:46%"></span></div><b>46%</b></div>
+          <div class="bar-row"><span>设计回复</span><div class="bar"><span style="width:28%"></span></div><b>28%</b></div>
+          <div class="bar-row"><span>复核通过</span><div class="bar"><span style="width:18%"></span></div><b>18%</b></div>
+          <div class="bar-row"><span>关闭</span><div class="bar"><span style="width:8%"></span></div><b>8%</b></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><h3>可信评审要求</h3><span>工程责任边界</span></div>
+          <table>
+            <tbody>
+              <tr><td><span class="badge green"></span> 证据链</td><td>每条意见必须关联图纸页码/图号、原文条文、抽取字段和模型置信度。</td></tr>
+              <tr><td><span class="badge yellow"></span> 人工确认</td><td>AI只产生建议，重大问题必须由专业负责人确认后生效。</td></tr>
+              <tr><td><span class="badge red"></span> 审计追溯</td><td>保留模型版本、提示词模板、知识库版本和人工修改痕迹。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="knowledge" class="section">
+      <div class="split">
+        <div class="card">
+          <div class="card-title">
+            <h3>规范知识库检索</h3>
+            <span>RAG + 关键词过滤 + 引用溯源</span>
+          </div>
+          <div class="search-box">
+            <input id="kbQuery" placeholder="输入问题：如 110kV主变间距、接地设计、保护配置"/>
+            <button class="btn btn-primary" onclick="searchKb()">搜索</button>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button class="btn btn-secondary" onclick="presetKb('主变容量与短路电流校核')">主变校核</button>
+            <button class="btn btn-secondary" onclick="presetKb('电气安全距离与检修通道')">安全距离</button>
+            <button class="btn btn-secondary" onclick="presetKb('电缆工程量偏离历史项目')">造价异常</button>
+          </div>
+          <div id="kbResults"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <h3>知识组织方式</h3>
+            <span>工程可解释性优先</span>
+          </div>
+          <table>
+            <thead><tr><th>知识对象</th><th>字段设计</th><th>作用</th></tr></thead>
+            <tbody>
+              <tr><td>规范条文</td><td>条文编号、原文、适用范围、电压等级、强制性标识、版本</td><td>为每条AI意见提供可追溯依据</td></tr>
+              <tr><td>设备对象</td><td>设备类型、型号、容量、额定参数、关联图纸坐标</td><td>支持设备选型和图纸一致性检查</td></tr>
+              <tr><td>历史案例</td><td>项目类型、问题类型、整改意见、专家结论、关闭状态</td><td>提高评审意见的工程经验价值</td></tr>
+              <tr><td>专家知识</td><td>专业方向、常用判断规则、历史复核意见</td><td>形成企业知识资产，支持人机协同</td></tr>
+            </tbody>
+          </table>
+          <div class="footer-note">
+            推荐采用“条文编号 + 原文 + 适用条件 + 工程类型 + 标准版本”的切片策略，并对强制性条文进行单独索引，避免大模型凭空生成规范依据。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap" class="section">
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">
+            <h3>四阶段实施路径</h3>
+            <span>从单点试点到企业级平台</span>
+          </div>
+          <div class="timeline">
+            <div class="stage"><div class="stage-time">0-3个月</div><div><h4>第一阶段：规范库与文本评审试点</h4><p>建设核心规范条文库、历史评审意见库；优先支持设计说明、设备表、工程量清单的自动审查，形成可演示闭环。</p></div></div>
+            <div class="stage"><div class="stage-time">3-6个月</div><div><h4>第二阶段：造价与图纸半自动评审</h4><p>建立历史造价指标库；上线PDF图纸OCR、图签识别、设备编号抽取；选择一个专业开展准确率评估。</p></div></div>
+            <div class="stage"><div class="stage-time">6-12个月</div><div><h4>第三阶段：7+1多智能体协同</h4><p>扩展电气一次、二次、土建、线路等专业Agent；引入主审Agent汇总仲裁和重大缺陷人工中断机制。</p></div></div>
+            <div class="stage"><div class="stage-time">12个月+</div><div><h4>第四阶段：知识图谱与自进化</h4><p>沉淀设备-规范-案例-专家四维知识图谱；通过人工复核结果持续优化检索、提示词和专业规则。</p></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <h3>技术选型建议</h3>
+            <span>私有化、可替换、可审计</span>
+          </div>
+          <table>
+            <thead><tr><th>层级</th><th>建议方案</th><th>备注</th></tr></thead>
+            <tbody>
+              <tr><td>前端</td><td>React/Vue + 图纸在线批注组件</td><td>重点支持评审台、报告闭环、问题定位</td></tr>
+              <tr><td>Agent编排</td><td>LangGraph / AutoGen</td><td>需要支持并行、状态持久化、人工介入</td></tr>
+              <tr><td>模型层</td><td>私有模型网关：DeepSeek/Qwen/企业模型可插拔</td><td>避免硬绑定单一模型；敏感项目优先本地部署</td></tr>
+              <tr><td>向量数据库</td><td>Milvus / Chroma</td><td>规范库、案例库、评审意见库的混合检索</td></tr>
+              <tr><td>图纸解析</td><td>CAD解析组件 + OCR + 多模态模型</td><td>DWG拓扑解析需长期投入，先从PDF/表格试点</td></tr>
+              <tr><td>安全审计</td><td>权限分级、模型调用日志、知识库版本冻结</td><td>工程评审结论必须可追责、可复盘</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <div class="card-title">
+          <h3>三类优先落地场景</h3>
+          <span>建议从低风险、高价值场景开始</span>
+        </div>
+        <div class="grid grid-3">
+          <div class="scenario-card">
+            <h4>场景一：输变电初设评审</h4>
+            <ul>
+              <li>输入：设计说明、一次图、总平面、设备表、投资估算</li>
+              <li>重点：方案完整性、设备选型、专业间一致性</li>
+              <li>产出：初设评审意见、重大风险清单、整改闭环表</li>
+            </ul>
+          </div>
+          <div class="scenario-card">
+            <h4>场景二：新能源接入可研</h4>
+            <ul>
+              <li>输入：接入系统方案、送出线路路径、消纳分析</li>
+              <li>重点：接入边界、线路路径、造价合理性</li>
+              <li>产出：接入风险提示、路径冲突、估算偏离分析</li>
+            </ul>
+          </div>
+          <div class="scenario-card">
+            <h4>场景三：施工图抽检</h4>
+            <ul>
+              <li>输入：施工图PDF/DWG、材料表、计算书</li>
+              <li>重点：图纸完整性、图纸间冲突、强条遗漏</li>
+              <li>产出：图纸定位问题清单、专业复核任务单</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <div class="card-title">
+          <h3>风险与应对</h3>
+          <span>避免“炫技式AI项目”</span>
+        </div>
+        <table>
+          <thead><tr><th>风险</th><th>表现</th><th>治理策略</th></tr></thead>
+          <tbody>
+            <tr><td>模型幻觉</td><td>虚构规范条文、给出无依据结论</td><td>强制RAG引用；无来源不输出正式意见；人工确认</td></tr>
+            <tr><td>图纸理解误差</td><td>OCR识别错误、CAD图层语义不一致</td><td>低置信度标红；引入图层标准；人工抽样校验</td></tr>
+            <tr><td>责任边界不清</td><td>AI意见被误认为正式审查结论</td><td>AI建议与人工结论分栏展示；审批流留痕</td></tr>
+            <tr><td>知识库过期</td><td>规范版本滞后导致错误引用</td><td>规范版本管理、冻结项目评审版本、定期更新审计</td></tr>
+            <tr><td>组织流程不适配</td><td>智能体分工与专业室职责冲突</td><td>按电气一次/二次/土建/线路组织Agent和权限</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer-note">
+      原型说明：这是一个离线静态HTML演示，用于方案汇报、需求评审和立项讨论；真实系统需接入企业文件权限、规范库、模型服务、图纸解析引擎和审批系统。
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const sections = {
+    dashboard: ["基于大模型和智能体的工程设计评审系统", "融合“产品完整度 + 电力专业深度”的交互式方案：以项目流程为骨架，以电气一次/二次、土建、线路等专业智能体为核心，以RAG、图纸解析、造价异常检测和人工复核构成可信闭环。"],
+    projects: ["项目中心", "统一管理工程项目、设计文件、解析结果和评审状态；从文件上传开始建立证据链。"],
+    workbench: ["智能评审台", "7个专业/职能智能体并行工作，主审Agent进行汇总、冲突仲裁、风险定级和人工复核流转。"],
+    report: ["评审报告", "输出可追溯、可复核、可闭环的结构化评审意见，而不是单纯的自然语言总结。"],
+    knowledge: ["规范知识库", "通过RAG和知识图谱把规范条文、企业标准、设备对象、历史案例和专家经验连接起来。"],
+    roadmap: ["实施路线", "采用四阶段实施：先文本与规范试点，再造价/图纸半自动评审，最终扩展为企业级多智能体平台。"]
+  };
+
+  const agents = [
+    {id:"primary", name:"电气一次Agent", emoji:"⚡", desc:"主接线、设备选型、短路电流、间隔配置一致性"},
+    {id:"secondary", name:"电气二次Agent", emoji:"🧩", desc:"继电保护、自动化、二次回路、通信接口"},
+    {id:"civil", name:"土建Agent", emoji:"🏗️", desc:"结构荷载、基础布置、抗震设防、坐标一致性"},
+    {id:"line", name:"线路Agent", emoji:"🗼", desc:"路径、杆塔、导线力学、交叉跨越"},
+    {id:"code", name:"规范合规Agent", emoji:"📚", desc:"强制性条文、行业规范、企业标准、历史意见"},
+    {id:"cost", name:"造价分析Agent", emoji:"💰", desc:"工程量清单、历史指标、单价和数量异常"},
+    {id:"safety", name:"安全评估Agent", emoji:"🛡️", desc:"安全距离、接地、消防通道、运维风险"},
+    {id:"chief", name:"主审Agent", emoji:"🧠", desc:"意见汇总、冲突仲裁、评分定级、报告生成"}
+  ];
+
+  const logs = [
+    ["t", "LangGraph: 创建项目状态图，载入项目元数据与文件清单。"],
+    ["ok", "文件解析完成：识别 DWG 12份、PDF 8份、设计说明书 1份、工程量清单 1份。"],
+    ["t", "并行启动：电气一次、电气二次、土建、线路、规范、造价、安全Agent。"],
+    ["warn", "规范合规Agent: 发现设计说明中规范版本字段缺失，已标记为可追溯性问题。"],
+    ["warn", "电气一次Agent: 设备表与一次接线图主变容量描述不一致，触发跨文件一致性校验。"],
+    ["warn", "土建Agent: GIS室设备基础坐标与电气布置图存在偏差，建议专业复核。"],
+    ["warn", "造价分析Agent: 电缆工程量较历史同类项目偏离超过阈值，需补充路径依据。"],
+    ["ok", "安全评估Agent: 消防通道与接地说明完成初筛，未发现阻断性问题。"],
+    ["t", "主审Agent: 对各Agent意见进行去重、合并、风险定级。"],
+    ["err", "触发条件边：重大问题需要人工确认，进入专业负责人复核节点。"],
+    ["ok", "评审报告草稿已生成：重大2项、一般5项、建议8项。"]
+  ];
+
+  const liveIssues = [
+    {type:"major", title:"主变容量参数跨文件不一致", tag:"重大", body:"设备参数表与一次接线图中的主变容量描述不一致，可能影响短路电流校核、设备开断能力和保护配置。证据链：设备表第2页；一次图A-01。"},
+    {type:"normal", title:"GIS室基础坐标与电气布置图偏差", tag:"一般", body:"土建平面图与电气平面图的设备基础坐标存在偏差，需复核安装净距、检修通道与设备基础尺寸。证据链：T-03/E-05。"},
+    {type:"normal", title:"电缆工程量偏离历史指标", tag:"一般", body:"部分电缆工程量较同类型项目偏离超过20%，需补充路径计算或备用量设置依据。证据链：工程量清单第18行；历史项目对标。"},
+    {type:"suggest", title:"规范版本未完整列明", tag:"建议", body:"设计说明引用了部分规范名称，但未列出标准版本和生效日期，影响后续审计追溯。建议补充规范版本清单。"}
+  ];
+
+  const kbData = [
+    {title:"强制性条文切片示例：电气安全距离", score:"0.92", body:"适用范围：变电站/配电装置/检修通道。系统会返回条文编号、原文、适用电压等级和版本信息；演示数据不替代正式规范库。"},
+    {title:"历史案例：设备参数跨图纸不一致", score:"0.88", body:"相似案例显示，设备表与一次图参数不一致通常会导致短路计算书、保护配置和清单同步错误，需主审Agent触发跨专业复核。"},
+    {title:"企业评审规则：工程量异常阈值", score:"0.83", body:"示例规则：同类型、同电压等级、同地区系数项目中，关键设备或材料工程量偏离超过±20%时标记为一般风险，超过±35%时建议人工复核。"}
+  ];
+
+  let running = false;
+  let timers = [];
+
+  function renderAgents() {
+    const grid = document.getElementById("agentGrid");
+    grid.innerHTML = agents.map(a => `
+      <div class="agent" id="agent-${a.id}">
+        <h4><span>${a.emoji} ${a.name}</span><span class="pill blue" id="status-${a.id}">待启动</span></h4>
+        <p>${a.desc}</p>
+        <div class="progress"><div id="progress-${a.id}"></div></div>
+        <small id="small-${a.id}">等待主审调度</small>
+      </div>
+    `).join("");
+  }
+
+  function navTo(id) {
+    document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+    document.getElementById(id).classList.add("active");
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.section === id));
+    document.getElementById("pageTitle").textContent = sections[id][0];
+    document.getElementById("pageDesc").textContent = sections[id][1];
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
+
+  document.querySelectorAll(".nav-btn").forEach(btn => btn.addEventListener("click", () => navTo(btn.dataset.section)));
+
+  function appendLog(cls, text) {
+    const c = document.getElementById("console");
+    const now = new Date().toLocaleTimeString();
+    c.innerHTML += `<div><span class="t">[${now}]</span> <span class="${cls}">${text}</span></div>`;
+    c.scrollTop = c.scrollHeight;
+  }
+
+  function setAgent(id, progress, status, cls="running", note="正在分析") {
+    const box = document.getElementById("agent-" + id);
+    const bar = document.getElementById("progress-" + id);
+    const statusEl = document.getElementById("status-" + id);
+    const small = document.getElementById("small-" + id);
+    box.className = "agent " + cls;
+    bar.style.width = progress + "%";
+    statusEl.className = "pill " + (cls === "done" ? "green" : cls === "warn" ? "yellow" : "blue");
+    statusEl.textContent = status;
+    small.textContent = note;
+  }
+
+  function resetReview() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    running = false;
+    renderAgents();
+    document.getElementById("console").innerHTML = "";
+    document.getElementById("issueCounter").textContent = "已发现 0 项";
+    document.getElementById("liveRisks").innerHTML = `<div class="risk-item suggest"><div class="risk-head"><h4>等待评审启动</h4><span class="risk suggest">提示</span></div><p>启动后，各专业Agent会并行输出问题，并由主审Agent进行合并、去重和风险定级。</p></div>`;
+    showToast("评审演示已重置。");
+  }
+
+  function startReview() {
+    if (running) { showToast("评审演示正在运行。"); return; }
+    resetReview();
+    running = true;
+    showToast("已启动多智能体评审演示。");
+
+    logs.forEach((item, idx) => {
+      timers.push(setTimeout(() => appendLog(item[0], item[1]), idx * 780 + 200));
+    });
+
+    agents.forEach((a, i) => {
+      timers.push(setTimeout(() => setAgent(a.id, 28, "分析中", "running", "正在抽取要素与检索证据"), 300 + i*110));
+      timers.push(setTimeout(() => setAgent(a.id, 66, "校验中", "running", "执行跨文件/跨专业校验"), 1700 + i*135));
+      timers.push(setTimeout(() => {
+        const warn = ["primary","civil","cost","code"].includes(a.id);
+        setAgent(a.id, 100, warn ? "有发现" : "完成", warn ? "warn" : "done", warn ? "发现需复核问题，已提交主审Agent" : "完成评审，未发现阻断性风险");
+      }, 3500 + i*160));
+    });
+
+    timers.push(setTimeout(() => {
+      const list = document.getElementById("liveRisks");
+      list.innerHTML = "";
+      liveIssues.forEach((r, idx) => {
+        timers.push(setTimeout(() => {
+          list.innerHTML += `<div class="risk-item ${r.type}"><div class="risk-head"><h4>${r.title}</h4><span class="risk ${r.type}">${r.tag}</span></div><p>${r.body}</p></div>`;
+          document.getElementById("issueCounter").textContent = "已发现 " + (idx + 1) + " 项";
+        }, idx * 520));
+      });
+    }, 2300));
+
+    timers.push(setTimeout(() => {
+      setAgent("chief", 100, "待人工确认", "warn", "重大问题已触发人工复核节点");
+      document.getElementById("majorKpi").textContent = "9";
+      showToast("评审草稿已生成：重大2项、一般5项、建议8项。");
+      running = false;
+    }, 7200));
+  }
+
+  function manualIntervention() {
+    appendLog("err", "人工介入: 专业负责人已接管重大问题，AI意见进入待确认状态。");
+    setAgent("chief", 100, "人工介入", "warn", "等待专业负责人确认");
+    showToast("已触发人工介入节点：重大问题不会自动关闭。");
+  }
+
+  function goWorkbenchAndRun() {
+    navTo("workbench");
+    setTimeout(startReview, 250);
+  }
+
+  function showToast(text) {
+    const t = document.getElementById("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2800);
+  }
+
+  function renderKb(results) {
+    document.getElementById("kbResults").innerHTML = results.map(x => `
+      <div class="kb-result">
+        <h4><span>${x.title}</span><span class="pill green">相似度 ${x.score}</span></h4>
+        <p>${x.body}</p>
+      </div>
+    `).join("");
+  }
+
+  function searchKb() {
+    const q = document.getElementById("kbQuery").value.trim();
+    const suffix = q ? `检索问题：${q}` : "未输入问题，展示默认示例。";
+    showToast(suffix);
+    renderKb(kbData);
+  }
+
+  function presetKb(text) {
+    document.getElementById("kbQuery").value = text;
+    searchKb();
+  }
+
+  renderAgents();
+  renderKb(kbData);
+  appendLog("t", "系统就绪：等待选择项目并启动评审。");
+</script>
+</body>
+</html>

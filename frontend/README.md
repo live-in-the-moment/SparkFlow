@@ -1,6 +1,6 @@
-# 电力工程设计评审系统前端
+# 工程设计评审系统前端
 
-这是由原型 HTML 转换得到的 Vite + TypeScript 前端工程。源码直接放在 `frontend/` 下，原始原型文件 `ai_review_system_prototype.html` 保留为视觉和需求参考。
+这是由 `llm_agent_engineering_review_prototype.html` 转换得到的 Vite + TypeScript 前端工程。原始 HTML 保留为产品原型与视觉参考，工程入口为 `index.html`，交互逻辑位于 `src/main.ts`。
 
 ## 本地运行
 
@@ -8,6 +8,8 @@
 npm install
 npm run dev
 ```
+
+开发服务固定使用 `http://127.0.0.1:5174/`。
 
 ## 构建验证
 
