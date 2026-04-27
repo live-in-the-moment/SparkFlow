@@ -3,6 +3,7 @@
 Thumbs.db
 .idea/
 .vscode/
+~$*
 
 # Python cache / build
 __pycache__/
@@ -14,6 +15,11 @@ dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
+
+# Node / frontend cache and build outputs
+node_modules/
+.vite/
+*.tsbuildinfo
 
 # Virtual environments
 .venv/
@@ -53,6 +59,17 @@ tmp_parse_compare/
 # Large local input datasets (do not upload by default)
 image/
 .artifacts/
+docs/**/*.zip
+docs/**/*.pdf
+docs/**/*.dwg
+docs/**/*.dxf
+docs/**/*.docx
+docs/**/*.pptx
+docs/**/*.xls
+docs/**/*.xlsx
+docs/**/*.jpg
+docs/**/*.jpeg
+docs/**/*.png
 
 # Codex local configuration
 .codex/
