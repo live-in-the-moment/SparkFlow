@@ -117,6 +117,7 @@ def review_pipeline(
     selection_mode: str = "auto",
     graph: str = "electrical",
     include_sparkflow_audit: bool = True,
+    rule_refine_mode: str = "heuristic",
 ) -> ReviewPipelineOutput:
     review_output = review_audit(
         drawing_path,
@@ -130,6 +131,7 @@ def review_pipeline(
         selection_mode=selection_mode,
         graph=graph,
         include_sparkflow_audit=include_sparkflow_audit,
+        rule_refine_mode=rule_refine_mode,
     )
     drawing_info = _read_json(review_output.drawing_info_json_path)
     split_source_path = _resolve_split_source_path(drawing_path, drawing_info)
@@ -267,11 +269,19 @@ def split_review_pages(path: Path, out_dir: Path) -> Path:
 
 def build_rectification_checklist(review_report: dict[str, Any], manifest: list[dict[str, Any]]) -> dict[str, Any]:
     page_issues = _build_page_issues(manifest)
-    review_issues = _build_review_issues(review_report, manifest)
+    grouped_review_issues = _build_review_issues(review_report, manifest)
+    drawing_issues = grouped_review_issues["drawing_issues"]
+    manual_issues = grouped_review_issues["manual_issues"]
+    review_issues = drawing_issues + manual_issues
     summary = review_report.get("summary") or {}
     placeholder_count = int(summary.get("placeholder_text_count") or 0)
     if placeholder_count <= 0:
         placeholder_count = sum(len(item.get("placeholder_texts") or []) for item in page_issues)
+    drawing_rule_count = len(drawing_issues)
+    manual_rule_count = len(manual_issues)
+    filtered_candidate_count = int(summary.get("filtered_candidate_count") or 0)
+    if filtered_candidate_count <= 0:
+        filtered_candidate_count = drawing_rule_count + manual_rule_count
     return {
         "created_at": datetime.now(timezone.utc).astimezone().isoformat(),
         "project_code": review_report.get("project_code"),
@@ -288,11 +298,16 @@ def build_rectification_checklist(review_report: dict[str, Any], manifest: list[
             "page_issue_count": len(page_issues),
             "review_issue_count": len(review_issues),
             "placeholder_text_count": placeholder_count,
+            "drawing_rule_count": drawing_rule_count,
+            "manual_rule_count": manual_rule_count,
+            "filtered_candidate_count": filtered_candidate_count,
             "review_rule_counts": summary.get("review_rule_counts") or {},
             "requirement_counts": summary.get("requirement_counts") or {},
         },
         "page_issues": page_issues,
         "review_issues": review_issues,
+        "drawing_issues": drawing_issues,
+        "manual_issues": manual_issues,
     }
 
 
@@ -308,7 +323,15 @@ def render_rectification_checklist_markdown(checklist: dict[str, Any]) -> str:
     lines.append("## 1. 审核摘要")
     lines.append("")
     summary = checklist.get("summary") or {}
-    for key in ("split_page_count", "page_issue_count", "review_issue_count", "placeholder_text_count"):
+    for key in (
+        "split_page_count",
+        "page_issue_count",
+        "review_issue_count",
+        "placeholder_text_count",
+        "drawing_rule_count",
+        "manual_rule_count",
+        "filtered_candidate_count",
+    ):
         lines.append(f"- {key}: {summary.get(key)}")
     review_rule_counts = summary.get("review_rule_counts") or {}
     if review_rule_counts:
@@ -337,13 +360,13 @@ def render_rectification_checklist_markdown(checklist: dict[str, Any]) -> str:
             lines.append(f"- 问题描述：{item['problem']}")
             lines.append(f"- 整改建议：{item['suggestion']}")
             lines.append("")
-    lines.append("## 3. 评审规则审查情况")
+    lines.append("## 3. 评审规则审查情况（图纸可判定）")
     lines.append("")
-    review_issues = checklist.get("review_issues") or []
-    if not review_issues:
-        lines.append("无待跟踪评审规则。")
+    drawing_issues = checklist.get("drawing_issues") or []
+    if not drawing_issues:
+        lines.append("无图纸可判定规则待跟踪。")
     else:
-        for index, item in enumerate(review_issues, start=1):
+        for index, item in enumerate(drawing_issues, start=1):
             lines.append(f"### 3.{index} {item['title']}")
             lines.append("")
             lines.append(f"- 结果：{item['result']}")
@@ -353,6 +376,24 @@ def render_rectification_checklist_markdown(checklist: dict[str, Any]) -> str:
             if item.get("related_pages"):
                 lines.append("- 关联图纸：" + "；".join(item["related_pages"]))
             lines.append(f"- 说明：{item['explanation']}")
+            lines.append("")
+    lines.append("## 4 人工复核项（非图纸自动判定）")
+    lines.append("")
+    manual_issues = checklist.get("manual_issues") or []
+    if not manual_issues:
+        lines.append("无人工复核项。")
+    else:
+        for index, item in enumerate(manual_issues, start=1):
+            lines.append(f"### 4.{index} {item['title']}")
+            lines.append("")
+            lines.append(f"- 结果：{item['result']}")
+            lines.append(f"- 评审规则：{item['text']}")
+            if item.get("reply"):
+                lines.append(f"- 回复：{item['reply']}")
+            if item.get("related_pages"):
+                lines.append("- 关联图纸：" + "；".join(item["related_pages"]))
+            lines.append(f"- 说明：{item['explanation']}")
+            lines.append("- 固定说明：依赖附件资料，系统不做自动通过/不通过判定。")
             lines.append("")
     return "\n".join(lines)
 
@@ -919,24 +960,32 @@ def _build_page_issues(manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return issues
 
 
-def _build_review_issues(review_report: dict[str, Any], manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    issues: list[dict[str, Any]] = []
+def _build_review_issues(review_report: dict[str, Any], manifest: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    drawing_issues: list[dict[str, Any]] = []
+    manual_issues: list[dict[str, Any]] = []
     for item in review_report.get("review_rule_results") or []:
         result = str(item.get("result") or "")
         if result == "passed":
             continue
         related_pages = _match_related_pages(item, manifest)
-        issues.append(
-            {
-                "title": f"{item.get('rule_id', '')}",
-                "result": result,
-                "text": item.get("source_text") or "",
-                "reply": item.get("reply") or "",
-                "related_pages": related_pages,
-                "explanation": item.get("explanation") or "",
-            }
-        )
-    return issues
+        issue = {
+            "title": f"{item.get('rule_id', '')}",
+            "result": result,
+            "text": item.get("source_text") or "",
+            "reply": item.get("reply") or "",
+            "related_pages": related_pages,
+            "explanation": item.get("explanation") or "",
+        }
+        scope = str(item.get("scope") or "").strip().lower()
+        check_type = str(item.get("check_type") or "").strip().lower()
+        if scope == "drawing" or check_type == "drawing":
+            drawing_issues.append(issue)
+        else:
+            manual_issues.append(issue)
+    return {
+        "drawing_issues": drawing_issues,
+        "manual_issues": manual_issues,
+    }
 
 
 def _match_related_pages(item: dict[str, Any], manifest: list[dict[str, Any]]) -> list[str]:

@@ -17,6 +17,7 @@ from .cad.parse import CadParseOptions, parse_cad
 from .core import audit_file
 from .model.build_options import ModelBuildOptions
 from .project_docs import _read_xls_rows_via_excel
+from .rule_refine_llm import refine_candidate_rules
 from .util import sha256_file
 
 _XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -289,6 +290,7 @@ def review_audit(
     selection_mode: str = "auto",
     graph: str = "electrical",
     include_sparkflow_audit: bool = True,
+    rule_refine_mode: str = "heuristic",
 ) -> ReviewAuditOutput:
     drawing_path = drawing_path.resolve()
     out_dir = out_dir.resolve()
@@ -308,6 +310,11 @@ def review_audit(
     resolved_project_code = resolved_project_code or str(review_rules.get("project_code") or "").strip()
     if not resolved_project_code:
         raise ValueError("无法从图纸路径或评审意见中定位工程编号，请显式传入 --project-code。")
+    refined_rules, rule_refine_trace = refine_candidate_rules(
+        [dict(item) for item in (review_rules.get("review_rules") or [])],
+        mode=rule_refine_mode,
+    )
+    review_rules["review_rules"] = refined_rules
 
     drawing_info_json_path = write_drawing_info(
         drawing_path,
@@ -344,6 +351,7 @@ def review_audit(
         sparkflow_report_json_path=(sparkflow_output.report_json_path if sparkflow_output is not None else None),
         sparkflow_report_md_path=(sparkflow_output.report_md_path if sparkflow_output is not None else None),
         include_sparkflow_audit=include_sparkflow_audit,
+        rule_refine_trace=rule_refine_trace,
     )
 
     review_report_json_path = run_dir / "review_report.json"
@@ -455,6 +463,7 @@ def _build_review_report(
     sparkflow_report_json_path: Path | None,
     sparkflow_report_md_path: Path | None,
     include_sparkflow_audit: bool,
+    rule_refine_trace: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     unique_texts = [str(item) for item in drawing_info.get("unique_texts") or []]
     review_rule_results = [_evaluate_review_rule(item, unique_texts) for item in review_rules_doc.get("review_rules") or []]
@@ -495,6 +504,7 @@ def _build_review_report(
         },
         "review_rule_results": review_rule_results,
         "requirements": review_rule_results,
+        "rule_refine_trace": rule_refine_trace or {},
     }
 
 

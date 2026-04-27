@@ -455,10 +455,15 @@ class ReviewFlowTests(unittest.TestCase):
                 report["summary"]["placeholder_texts"],
                 fixture["expected"]["placeholder_texts"],
             )
+            self.assertIn("rule_refine_trace", report)
+            self.assertEqual(report["rule_refine_trace"]["mode_requested"], "heuristic")
 
             results = {item["source_text"]: item["result"] for item in report["review_rule_results"]}
             for text, expected in fixture["expected"]["result_by_text"].items():
                 self.assertEqual(results[text], _normalize_expected_rule_result(expected))
+            for item in report["review_rule_results"]:
+                self.assertIn("raw_text", item)
+                self.assertIn("normalized_text", item)
 
     def test_review_audit_can_skip_sparkflow_audit(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -611,6 +616,39 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertTrue(Path(lines[1]).exists())
             self.assertTrue(Path(lines[2]).exists())
             self.assertTrue(Path(lines[3]).exists())
+            self.assertEqual(stderr.getvalue(), "")
+
+    def test_review_pipeline_command_accepts_rule_refine_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            drawing, review_dir, fixture = _stage_review_fixture(root)
+            out = root / "out"
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = main(
+                    [
+                        "review-pipeline",
+                        str(drawing),
+                        "--review-dir",
+                        str(review_dir),
+                        "--out",
+                        str(out),
+                        "--project-code",
+                        fixture["project"]["project_code"],
+                        "--dxf-backend",
+                        "ezdxf",
+                        "--skip-sparkflow-audit",
+                        "--rule-refine",
+                        "off",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            lines = stdout.getvalue().splitlines()
+            report = json.loads(Path(lines[4]).read_text(encoding="utf-8"))
+            self.assertEqual(report["rule_refine_trace"]["mode_requested"], "off")
             self.assertEqual(stderr.getvalue(), "")
 
     def test_rectification_checklist_labels_prefer_sheet_no_then_page_seq(self) -> None:
