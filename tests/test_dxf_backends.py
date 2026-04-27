@@ -6,9 +6,9 @@ from pathlib import Path
 
 import ezdxf
 
-from sparkflow.cad.errors import CadParseError
-from sparkflow.cad.parse import CadParseOptions, parse_cad
-from sparkflow.model.builder import build_system_model
+from backend.cad.errors import CadParseError
+from backend.cad.parse import CadParseOptions, parse_cad
+from backend.model.builder import build_system_model
 
 
 class DxfBackendTests(unittest.TestCase):

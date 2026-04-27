@@ -9,9 +9,9 @@ from unittest.mock import patch
 from docx import Document
 from openpyxl import Workbook
 
-from sparkflow.core import audit_file
-from sparkflow.model.types import Device, Point2D, ProjectDocumentContext, SystemModel
-from sparkflow.rules.project_rules import _count_drawing_occurrences
+from backend.core import audit_file
+from backend.model.types import Device, Point2D, ProjectDocumentContext, SystemModel
+from backend.rules.project_rules import _count_drawing_occurrences
 
 
 class DocumentBackedRuleTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class DocumentBackedRuleTests(unittest.TestCase):
 
             repo_ruleset = Path(__file__).resolve().parents[1] / "rulesets" / "stategrid_peidian_strict"
             with patch(
-                "sparkflow.project_docs._read_xls_rows_via_excel",
+                "backend.project_docs._read_xls_rows_via_excel",
                 return_value=[
                     ["名称", "数量", "单位"],
                     ["电杆", "3", "根"],

@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from sparkflow.cad.dwg_converter import DwgConvertOptions, convert_dwg_to_dxf
-from sparkflow.cad.errors import CadParseError
+from backend.cad.dwg_converter import DwgConvertOptions, convert_dwg_to_dxf
+from backend.cad.errors import CadParseError
 
 
 class DwgConverterTests(unittest.TestCase):

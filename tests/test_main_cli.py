@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-from sparkflow.__main__ import _parse_dwg_converter_cmd, main
+from backend.__main__ import _parse_dwg_converter_cmd, main
 
 
 class MainCliTests(unittest.TestCase):

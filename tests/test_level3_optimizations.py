@@ -6,11 +6,11 @@ from pathlib import Path
 
 import ezdxf
 
-from sparkflow.cad.entities import CadEntity
-from sparkflow.cad.parse import CadParseOptions, parse_cad
-from sparkflow.model.build_options import ModelBuildOptions, TerminalDef, TerminalTemplate, WireFilter
-from sparkflow.model.builder import build_system_model
-from sparkflow.model.types import Point2D
+from backend.cad.entities import CadEntity
+from backend.cad.parse import CadParseOptions, parse_cad
+from backend.model.build_options import ModelBuildOptions, TerminalDef, TerminalTemplate, WireFilter
+from backend.model.builder import build_system_model
+from backend.model.types import Point2D
 
 
 class Level3OptimizationTests(unittest.TestCase):

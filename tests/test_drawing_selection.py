@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 from pathlib import Path
 
-from sparkflow.model.selection import classify_drawing
+from backend.model.selection import classify_drawing
 
 
 class DrawingSelectionTests(unittest.TestCase):

@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 
-from sparkflow.model.connectivity import ConnectivityBuildOptions, build_connectivity
-from sparkflow.model.electrical import build_electrical_graph
-from sparkflow.model.types import Device, Point2D, SystemModel, Terminal, UnresolvedItem, WireSegment
-from sparkflow.rules.rules import FloatingWireEndpointsRule
+from backend.model.connectivity import ConnectivityBuildOptions, build_connectivity
+from backend.model.electrical import build_electrical_graph
+from backend.model.types import Device, Point2D, SystemModel, Terminal, UnresolvedItem, WireSegment
+from backend.rules.rules import FloatingWireEndpointsRule
 
 
 class ElectricalGraphTests(unittest.TestCase):

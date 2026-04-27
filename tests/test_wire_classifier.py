@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 
-from sparkflow.cad.entities import CadEntity
-from sparkflow.model.build_options import ModelBuildOptions, TerminalDef, TerminalTemplate, WireFilter, default_model_build_options
-from sparkflow.model.builder import build_system_model
+from backend.cad.entities import CadEntity
+from backend.model.build_options import ModelBuildOptions, TerminalDef, TerminalTemplate, WireFilter, default_model_build_options
+from backend.model.builder import build_system_model
 
 
 class WireClassifierTests(unittest.TestCase):

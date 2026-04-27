@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import urllib.error
+import urllib.request
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 
 from .cad.parse import CadParseOptions, parse_cad
 from .core import audit_file
@@ -58,6 +61,70 @@ _MANUAL_ONLY_HINTS = (
     "甲供设备",
     "附件",
 )
+
+_ATTACHMENT_INVENTORY_RE = re.compile(r"^\s*\d+[、.．]\s*附件\s*\d+", re.IGNORECASE)
+_NON_EXECUTABLE_CATEGORY_HINTS = ("形式审查",)
+_NON_EXECUTABLE_ITEM_HINTS = ("齐备性",)
+_DRAWING_ANCHOR_HINTS = (
+    "图纸",
+    "系统图",
+    "示意图",
+    "平断面图",
+    "接线图",
+    "布置图",
+    "安装图",
+    "走向图",
+    "材料表",
+    "目录",
+)
+_MANUAL_DOCUMENT_GENERIC_HINTS = (
+    "设计文件",
+    "预算文件",
+    "可研批复",
+    "批复文件",
+    "编制依据",
+    "合法有效",
+    "费用性质",
+    "完整规范",
+    "深度",
+)
+_BROAD_QUESTION_HINTS = (
+    "最优",
+    "合理",
+    "齐全",
+    "完整",
+    "符合要求",
+)
+_BOUNDARY_FILTER_REASONS = frozenset(
+    {
+        "low_signal_checklist",
+        "manual_generic_prompt",
+        "manual_document_general",
+        "broad_questionnaire",
+        "manual_without_anchor",
+    }
+)
+_TECHPOINT_LLM_ENABLED_ENV = "SPARKFLOW_TECHPOINT_LLM_RECHECK_ENABLED"
+_TECHPOINT_LLM_BASE_URL_ENV = "SPARKFLOW_TECHPOINT_LLM_RECHECK_BASE_URL"
+_TECHPOINT_LLM_MODEL_ENV = "SPARKFLOW_TECHPOINT_LLM_RECHECK_MODEL"
+_TECHPOINT_LLM_API_KEY_ENV = "SPARKFLOW_TECHPOINT_LLM_RECHECK_API_KEY"
+_TECHPOINT_LLM_TIMEOUT_ENV = "SPARKFLOW_TECHPOINT_LLM_RECHECK_TIMEOUT_SEC"
+_TECHPOINT_LLM_MAX_CASES_ENV = "SPARKFLOW_TECHPOINT_LLM_RECHECK_MAX_CASES"
+_TECHPOINT_LLM_DEFAULT_TIMEOUT_SEC = 20.0
+_TECHPOINT_LLM_DEFAULT_MAX_CASES = 20
+_DOTENV_APPLIED = False
+
+
+@dataclass(frozen=True)
+class _TechnicalPointLlmRecheckConfig:
+    requested: bool = False
+    enabled: bool = False
+    disabled_reason: str = ""
+    base_url: str = ""
+    model: str = ""
+    api_key: str = ""
+    timeout_sec: float = _TECHPOINT_LLM_DEFAULT_TIMEOUT_SEC
+    max_cases: int = _TECHPOINT_LLM_DEFAULT_MAX_CASES
 
 
 @dataclass(frozen=True)
@@ -193,13 +260,15 @@ def load_review_rules(
         "major_issues": _extract_major_issues(major_row, project_code=resolved_project_code),
     }
     rules_doc["review_rules"] = _build_review_rules(rules_doc)
-    rules_doc["review_rules"].extend(
-        _load_technical_point_rules(
-            technical_points_excels,
-            project_name=resolved_project_name,
-            project_code=resolved_project_code,
-        )
+    llm_recheck_config = _resolve_technical_point_llm_recheck_config()
+    technical_point_rules, technical_points_meta = _load_technical_point_rules_with_meta(
+        technical_points_excels,
+        project_name=resolved_project_name,
+        project_code=resolved_project_code,
+        llm_recheck_config=llm_recheck_config,
     )
+    rules_doc["review_rules"].extend(technical_point_rules)
+    rules_doc["technical_points_extraction"] = technical_points_meta
     return rules_doc
 
 
@@ -391,6 +460,7 @@ def _build_review_report(
     review_rule_results = [_evaluate_review_rule(item, unique_texts) for item in review_rules_doc.get("review_rules") or []]
     counts = Counter(item["result"] for item in review_rule_results)
     placeholder_texts = list(drawing_info.get("placeholder_texts") or [])
+    technical_points_meta = review_rules_doc.get("technical_points_extraction") or {}
     return {
         "created_at": datetime.now().astimezone().isoformat(),
         "input_path": str(drawing_path),
@@ -411,7 +481,10 @@ def _build_review_report(
             "placeholder_texts": placeholder_texts,
             "review_rule_counts": dict(counts),
             "requirement_counts": dict(counts),
+            "technical_point_emitted_count": technical_points_meta.get("emitted_rule_count"),
+            "technical_point_filtered_count": technical_points_meta.get("filtered_candidate_count"),
         },
+        "technical_points_extraction": technical_points_meta,
         "review_rules": {
             "project_summary": review_rules_doc.get("project_summary"),
             "major_issues": review_rules_doc.get("major_issues"),
@@ -965,16 +1038,93 @@ def _load_technical_point_rules(
     *,
     project_name: str,
     project_code: str,
+    llm_recheck_config: _TechnicalPointLlmRecheckConfig | None = None,
 ) -> list[dict[str, Any]]:
+    rules, _ = _load_technical_point_rules_with_meta(
+        paths,
+        project_name=project_name,
+        project_code=project_code,
+        llm_recheck_config=llm_recheck_config,
+    )
+    return rules
+
+
+def _load_technical_point_rules_with_meta(
+    paths: tuple[Path, ...],
+    *,
+    project_name: str,
+    project_code: str,
+    llm_recheck_config: _TechnicalPointLlmRecheckConfig | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    resolved_llm_config = llm_recheck_config or _resolve_technical_point_llm_recheck_config()
     rules: list[dict[str, Any]] = []
+    filtered_by_reason: Counter[str] = Counter()
+    filtered_examples: list[dict[str, Any]] = []
+    candidate_count = 0
+    applicable_count = 0
+    workbook_count = 0
+    matched_workbook_count = 0
+    llm_boundary_candidate_count = 0
+    llm_requested_count = 0
+    llm_accepted_count = 0
+    llm_rejected_count = 0
+    llm_skipped_due_limit_count = 0
+    llm_errors: list[str] = []
     index = 0
     for path in _candidate_technical_point_paths(paths, project_name=project_name, project_code=project_code):
+        workbook_count += 1
         sheets = _read_excel_sheets(path)
         if not _technical_points_file_matches_project(path, sheets, project_name=project_name, project_code=project_code):
             continue
-        rules.extend(_extract_technical_point_rules(path, sheets, start_index=index + 1))
+        matched_workbook_count += 1
+        file_rules, file_meta = _extract_technical_point_rules(
+            path,
+            sheets,
+            start_index=index + 1,
+            llm_recheck_config=resolved_llm_config,
+        )
+        rules.extend(file_rules)
         index = len(rules)
-    return rules
+        candidate_count += int(file_meta.get("candidate_count") or 0)
+        applicable_count += int(file_meta.get("applicable_count") or 0)
+        filtered_by_reason.update(file_meta.get("filtered_by_reason") or {})
+        for item in file_meta.get("filtered_examples") or []:
+            if len(filtered_examples) >= 20:
+                break
+            filtered_examples.append(item)
+        llm_meta = file_meta.get("llm_recheck") or {}
+        llm_boundary_candidate_count += int(llm_meta.get("boundary_candidate_count") or 0)
+        llm_requested_count += int(llm_meta.get("requested_count") or 0)
+        llm_accepted_count += int(llm_meta.get("accepted_count") or 0)
+        llm_rejected_count += int(llm_meta.get("rejected_count") or 0)
+        llm_skipped_due_limit_count += int(llm_meta.get("skipped_due_limit_count") or 0)
+        llm_error = _normalize_space(str(llm_meta.get("error") or ""))
+        if llm_error and llm_error not in llm_errors and len(llm_errors) < 3:
+            llm_errors.append(llm_error)
+    filtered_count = int(sum(filtered_by_reason.values()))
+    return rules, {
+        "workbook_count": workbook_count,
+        "matched_workbook_count": matched_workbook_count,
+        "candidate_count": candidate_count,
+        "applicable_candidate_count": applicable_count,
+        "emitted_rule_count": len(rules),
+        "filtered_candidate_count": filtered_count,
+        "filtered_by_reason": dict(filtered_by_reason),
+        "filtered_examples": filtered_examples,
+        "llm_recheck": {
+            "requested": bool(resolved_llm_config.requested),
+            "enabled": bool(resolved_llm_config.enabled),
+            "disabled_reason": resolved_llm_config.disabled_reason,
+            "base_url": resolved_llm_config.base_url,
+            "model": resolved_llm_config.model,
+            "boundary_candidate_count": llm_boundary_candidate_count,
+            "requested_count": llm_requested_count,
+            "accepted_count": llm_accepted_count,
+            "rejected_count": llm_rejected_count,
+            "skipped_due_limit_count": llm_skipped_due_limit_count,
+            "errors": llm_errors,
+        },
+    }
 
 
 def _candidate_technical_point_paths(
@@ -1034,16 +1184,22 @@ def _extract_technical_point_rules(
     sheets: list[tuple[str, list[list[str]]]],
     *,
     start_index: int,
-) -> list[dict[str, Any]]:
-    rules: list[dict[str, Any]] = []
+    llm_recheck_config: _TechnicalPointLlmRecheckConfig,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    emitted_candidates: list[dict[str, Any]] = []
+    boundary_candidates: list[dict[str, Any]] = []
+    filtered_by_reason: Counter[str] = Counter()
+    filtered_examples: list[dict[str, Any]] = []
+    candidate_count = 0
+    applicable_count = 0
     current_category = ""
     current_item = ""
-    next_index = start_index
-    for sheet_name, rows in sheets:
+    current_candidate_index = 0
+    for sheet_index, (sheet_name, rows) in enumerate(sheets):
         header_idx = _find_technical_points_header(rows)
         if header_idx is None:
             continue
-        for row in rows[header_idx + 1 :]:
+        for row_idx, row in enumerate(rows[header_idx + 1 :], start=header_idx + 2):
             cells = [_normalize_space(cell) for cell in row]
             if not any(cells):
                 continue
@@ -1053,26 +1209,541 @@ def _extract_technical_point_rules(
                 current_item = cells[1]
             review_point = cells[2] if len(cells) > 2 else ""
             applicable = cells[3] if len(cells) > 3 else ""
+            if review_point:
+                candidate_count += 1
             if applicable != "是" or not review_point:
                 continue
-            rules.append(
-                {
-                    "rule_id": f"technical_points.{next_index}",
-                    "source_type": "technical_points",
-                    "item_no": next_index,
-                    "source_text": review_point,
-                    "reply": "",
-                    "scope": _classify_scope(review_point),
-                    "check_type": _classify_check_type(review_point),
-                    "keywords": _extract_keywords(review_point),
-                    "category": current_category,
-                    "review_item": current_item,
-                    "source_file": str(path),
-                    "source_sheet": sheet_name,
-                }
+            applicable_count += 1
+            current_candidate_index += 1
+            candidate_id = f"tp_{path.stem}_{sheet_index}_{row_idx}_{current_candidate_index}"
+            candidate = {
+                "candidate_id": candidate_id,
+                "source_text": review_point,
+                "category": current_category,
+                "review_item": current_item,
+                "source_file": str(path),
+                "source_sheet": sheet_name,
+                "row_index": row_idx,
+                "order_key": (sheet_index, row_idx, current_candidate_index),
+            }
+            should_emit, filter_reason, allow_boundary_recheck = _should_emit_technical_point_rule(
+                review_point,
+                category=current_category,
+                review_item=current_item,
             )
-            next_index += 1
-    return rules
+            if not should_emit:
+                filtered_by_reason[filter_reason] += 1
+                if len(filtered_examples) < 20:
+                    filtered_examples.append(
+                        {
+                            "candidate_id": candidate_id,
+                            "reason": filter_reason,
+                            "source_text": review_point,
+                            "category": current_category,
+                            "review_item": current_item,
+                            "source_file": str(path),
+                            "source_sheet": sheet_name,
+                            "row_index": row_idx,
+                        }
+                    )
+                if allow_boundary_recheck:
+                    boundary_candidates.append({**candidate, "initial_filter_reason": filter_reason})
+                continue
+            emitted_candidates.append(candidate)
+
+    llm_meta = {
+        "boundary_candidate_count": len(boundary_candidates),
+        "requested_count": 0,
+        "accepted_count": 0,
+        "rejected_count": 0,
+        "skipped_due_limit_count": 0,
+        "error": "",
+    }
+    accepted_boundary_ids: set[str] = set()
+    llm_decisions: dict[str, dict[str, Any]] = {}
+    if llm_recheck_config.enabled and boundary_candidates:
+        llm_result = _llm_recheck_boundary_candidates(boundary_candidates, llm_recheck_config)
+        llm_meta["requested_count"] = int(llm_result.get("requested_count") or 0)
+        llm_meta["accepted_count"] = int(llm_result.get("accepted_count") or 0)
+        llm_meta["rejected_count"] = int(llm_result.get("rejected_count") or 0)
+        llm_meta["skipped_due_limit_count"] = int(llm_result.get("skipped_due_limit_count") or 0)
+        llm_meta["error"] = _normalize_space(str(llm_result.get("error") or ""))
+        llm_decisions = llm_result.get("decisions") or {}
+        accepted_boundary_ids = {
+            str(item)
+            for item in llm_result.get("accepted_ids") or []
+            if str(item).strip()
+        }
+        if accepted_boundary_ids:
+            for candidate in boundary_candidates:
+                if candidate["candidate_id"] not in accepted_boundary_ids:
+                    continue
+                initial_reason = str(candidate.get("initial_filter_reason") or "")
+                if initial_reason in filtered_by_reason:
+                    filtered_by_reason[initial_reason] -= 1
+                    if filtered_by_reason[initial_reason] <= 0:
+                        del filtered_by_reason[initial_reason]
+                decision = llm_decisions.get(candidate["candidate_id"]) or {}
+                candidate_with_decision = dict(candidate)
+                candidate_with_decision["llm_recheck"] = {
+                    "accepted": True,
+                    "reason": _normalize_space(str(decision.get("reason") or "")),
+                    "confidence": _normalize_confidence(decision.get("confidence")),
+                }
+                emitted_candidates.append(candidate_with_decision)
+
+    if accepted_boundary_ids:
+        filtered_examples = [
+            item for item in filtered_examples if str(item.get("candidate_id") or "") not in accepted_boundary_ids
+        ]
+    filtered_examples = [
+        {key: value for key, value in item.items() if key != "candidate_id"}
+        for item in filtered_examples[:20]
+    ]
+
+    emitted_candidates.sort(key=lambda item: item.get("order_key") or (0, 0, 0))
+    rules: list[dict[str, Any]] = []
+    next_index = start_index
+    for candidate in emitted_candidates:
+        source_text = str(candidate.get("source_text") or "")
+        rule = {
+            "rule_id": f"technical_points.{next_index}",
+            "source_type": "technical_points",
+            "item_no": next_index,
+            "source_text": source_text,
+            "reply": "",
+            "scope": _classify_scope(source_text),
+            "check_type": _classify_check_type(source_text),
+            "keywords": _extract_keywords(source_text),
+            "category": candidate.get("category") or "",
+            "review_item": candidate.get("review_item") or "",
+            "source_file": candidate.get("source_file") or str(path),
+            "source_sheet": candidate.get("source_sheet") or "",
+        }
+        llm_recheck_detail = candidate.get("llm_recheck")
+        if isinstance(llm_recheck_detail, dict):
+            rule["llm_recheck"] = llm_recheck_detail
+        rules.append(rule)
+        next_index += 1
+
+    return rules, {
+        "candidate_count": candidate_count,
+        "applicable_count": applicable_count,
+        "filtered_by_reason": dict(filtered_by_reason),
+        "filtered_examples": filtered_examples,
+        "llm_recheck": llm_meta,
+    }
+
+
+def _should_emit_technical_point_rule(
+    review_point: str,
+    *,
+    category: str,
+    review_item: str,
+) -> tuple[bool, str, bool]:
+    normalized_point = _normalize_space(review_point)
+    normalized_category = _normalize_space(category)
+    normalized_item = _normalize_space(review_item)
+    if _is_attachment_inventory_rule(normalized_point):
+        return False, "attachment_inventory", False
+    if _is_document_completeness_rule(normalized_point, category=normalized_category, review_item=normalized_item):
+        return False, "document_completeness", False
+    keywords = _extract_keywords(normalized_point)
+    has_explicit_anchor = _has_explicit_target_anchor(normalized_point)
+    if _classify_scope(normalized_point) == "manual":
+        if _is_generic_yes_no_prompt(normalized_point) and not has_explicit_anchor:
+            return False, "manual_generic_prompt", True
+        if _is_manual_document_general_prompt(normalized_point):
+            return False, "manual_document_general", True
+        if _is_broad_questionnaire_prompt(normalized_point):
+            return False, "broad_questionnaire", True
+        if not _has_drawing_anchor(normalized_point) and not has_explicit_anchor:
+            return False, "manual_without_anchor", True
+        return True, "", False
+    if _is_broad_questionnaire_prompt(normalized_point):
+        return False, "broad_questionnaire", True
+    if keywords:
+        return True, "", False
+    if _has_drawing_anchor(normalized_point):
+        return True, "", False
+    return False, "low_signal_checklist", True
+
+
+def _is_attachment_inventory_rule(text: str) -> bool:
+    normalized = _normalize_space(text)
+    if not normalized:
+        return False
+    if _ATTACHMENT_INVENTORY_RE.search(normalized):
+        return True
+    return False
+
+
+def _is_document_completeness_rule(text: str, *, category: str, review_item: str) -> bool:
+    normalized = _normalize_space(text)
+    if any(hint in category for hint in _NON_EXECUTABLE_CATEGORY_HINTS):
+        if any(hint in review_item for hint in _NON_EXECUTABLE_ITEM_HINTS):
+            return True
+        if "附件" in normalized:
+            return True
+    return False
+
+
+def _is_generic_yes_no_prompt(text: str) -> bool:
+    normalized = _normalize_space(text)
+    normalized = re.sub(r"^\d+[、.．]\s*", "", normalized)
+    return normalized.startswith("是否")
+
+
+def _is_manual_document_general_prompt(text: str) -> bool:
+    normalized = _strip_leading_item_no(text)
+    if _has_explicit_target_anchor(normalized):
+        return False
+    if not any(hint in normalized for hint in _MANUAL_DOCUMENT_GENERIC_HINTS):
+        return False
+    return "是否" in normalized or any(hint in normalized for hint in _BROAD_QUESTION_HINTS)
+
+
+def _is_broad_questionnaire_prompt(text: str) -> bool:
+    normalized = _strip_leading_item_no(text)
+    if _has_explicit_target_anchor(normalized):
+        return False
+    broad_hit_count = sum(1 for hint in _BROAD_QUESTION_HINTS if hint in normalized)
+    if normalized.count("是否") >= 2:
+        return True
+    if "是否" in normalized and broad_hit_count >= 1:
+        return True
+    return broad_hit_count >= 2
+
+
+def _strip_leading_item_no(text: str) -> str:
+    return re.sub(r"^\s*\d+[、.．]\s*", "", _normalize_space(text))
+
+
+def _has_explicit_target_anchor(text: str) -> bool:
+    normalized = _normalize_space(text)
+    if not normalized:
+        return False
+    if re.search(r"图\s*[A-Z]?\d+", normalized, re.IGNORECASE):
+        return True
+    if re.search(r"(?:说明书|设计说明书)\s*\d+(?:\.\d+){1,3}", normalized):
+        return True
+    if re.search(r"第\s*\d+\s*(?:章|节|条)", normalized):
+        return True
+    if re.search(r"\d+(?:\.\d+){1,3}", normalized):
+        return True
+    return False
+
+
+def _has_drawing_anchor(text: str) -> bool:
+    normalized = _normalize_space(text)
+    if re.search(r"图\s*\d+", normalized):
+        return True
+    return any(hint in normalized for hint in _DRAWING_ANCHOR_HINTS)
+
+
+def _normalize_confidence(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric < 0:
+        return 0.0
+    if numeric > 1:
+        return 1.0
+    return numeric
+
+
+def _resolve_technical_point_llm_recheck_config(
+    env: Mapping[str, str] | None = None,
+) -> _TechnicalPointLlmRecheckConfig:
+    if env is None:
+        _apply_dotenv()
+        env = os.environ
+    requested = _env_truthy(env.get(_TECHPOINT_LLM_ENABLED_ENV))
+    base_url = str(env.get(_TECHPOINT_LLM_BASE_URL_ENV) or "").strip().rstrip("/")
+    model = str(env.get(_TECHPOINT_LLM_MODEL_ENV) or "").strip()
+    api_key = str(env.get(_TECHPOINT_LLM_API_KEY_ENV) or "").strip()
+    timeout_sec = _env_float(env.get(_TECHPOINT_LLM_TIMEOUT_ENV), _TECHPOINT_LLM_DEFAULT_TIMEOUT_SEC)
+    max_cases = _env_int(env.get(_TECHPOINT_LLM_MAX_CASES_ENV), _TECHPOINT_LLM_DEFAULT_MAX_CASES)
+    if not requested:
+        return _TechnicalPointLlmRecheckConfig(
+            requested=False,
+            enabled=False,
+            disabled_reason="disabled_by_default",
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            timeout_sec=timeout_sec,
+            max_cases=max_cases,
+        )
+    missing: list[str] = []
+    if not base_url:
+        missing.append("base_url")
+    if not model:
+        missing.append("model")
+    if not api_key:
+        missing.append("api_key")
+    if missing:
+        return _TechnicalPointLlmRecheckConfig(
+            requested=True,
+            enabled=False,
+            disabled_reason=f"missing_config:{','.join(missing)}",
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            timeout_sec=timeout_sec,
+            max_cases=max_cases,
+        )
+    return _TechnicalPointLlmRecheckConfig(
+        requested=True,
+        enabled=True,
+        disabled_reason="",
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        timeout_sec=timeout_sec,
+        max_cases=max_cases,
+    )
+
+
+def _apply_dotenv() -> None:
+    global _DOTENV_APPLIED
+    if _DOTENV_APPLIED:
+        return
+    for path in _candidate_dotenv_paths():
+        if path.exists() and path.is_file():
+            _merge_dotenv_file(path)
+    _DOTENV_APPLIED = True
+
+
+def _candidate_dotenv_paths() -> tuple[Path, ...]:
+    seen: set[Path] = set()
+    paths: list[Path] = []
+    for base in (Path.cwd(), Path(__file__).resolve().parent.parent):
+        candidate = (base / ".env").resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        paths.append(candidate)
+    return tuple(paths)
+
+
+def _merge_dotenv_file(path: Path) -> None:
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = _parse_dotenv_value(value)
+
+
+def _parse_dotenv_value(value: str) -> str:
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        return text[1:-1]
+    return text
+
+
+def _env_truthy(value: object) -> bool:
+    normalized = _normalize_space(str(value or "")).lower()
+    return normalized in {"1", "true", "yes", "on"}
+
+
+def _env_float(value: object, default: float) -> float:
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _env_int(value: object, default: int) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _llm_recheck_boundary_candidates(
+    candidates: list[dict[str, Any]],
+    config: _TechnicalPointLlmRecheckConfig,
+) -> dict[str, Any]:
+    limited_candidates = candidates[: config.max_cases]
+    requested_count = len(limited_candidates)
+    skipped_due_limit_count = max(0, len(candidates) - requested_count)
+    if not limited_candidates:
+        return {
+            "requested_count": 0,
+            "accepted_count": 0,
+            "rejected_count": 0,
+            "skipped_due_limit_count": skipped_due_limit_count,
+            "accepted_ids": [],
+            "decisions": {},
+            "error": "",
+        }
+    try:
+        response = _call_openai_compatible_chat_completion(
+            base_url=config.base_url,
+            model=config.model,
+            api_key=config.api_key,
+            timeout_sec=config.timeout_sec,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是配网施工图评审规则整理助手。"
+                        "任务是判断技术要点文本是否属于应保留的核心评审规则。"
+                        "只保留可执行、边界明确、对本专业图纸评审有直接约束的信息。"
+                        "附件清单、资料齐备性、泛化问句、预算/可研完整性检查通常应拒绝。"
+                        "只输出 JSON。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task": "判断每条候选技术要点是否应保留为核心评审规则",
+                            "output_schema": {
+                                "decisions": [
+                                    {
+                                        "candidate_id": "string",
+                                        "keep": True,
+                                        "reason": "string",
+                                        "confidence": 0.0,
+                                    }
+                                ]
+                            },
+                            "candidates": [
+                                {
+                                    "candidate_id": item["candidate_id"],
+                                    "category": item.get("category") or "",
+                                    "review_item": item.get("review_item") or "",
+                                    "source_text": item.get("source_text") or "",
+                                    "initial_filter_reason": item.get("initial_filter_reason") or "",
+                                }
+                                for item in limited_candidates
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+        )
+        decisions = _parse_llm_recheck_response(response)
+    except Exception as exc:
+        return {
+            "requested_count": requested_count,
+            "accepted_count": 0,
+            "rejected_count": 0,
+            "skipped_due_limit_count": skipped_due_limit_count,
+            "accepted_ids": [],
+            "decisions": {},
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    accepted_ids = [candidate_id for candidate_id, item in decisions.items() if bool(item.get("keep"))]
+    return {
+        "requested_count": requested_count,
+        "accepted_count": len(accepted_ids),
+        "rejected_count": max(0, requested_count - len(accepted_ids)),
+        "skipped_due_limit_count": skipped_due_limit_count,
+        "accepted_ids": accepted_ids,
+        "decisions": decisions,
+        "error": "",
+    }
+
+
+def _call_openai_compatible_chat_completion(
+    *,
+    base_url: str,
+    model: str,
+    api_key: str,
+    timeout_sec: float,
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    payload = json.dumps(
+        {
+            "model": model,
+            "temperature": 0,
+            "messages": messages,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        url=f"{base_url}/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_sec) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"http_{exc.code}: {detail}") from exc
+    return json.loads(body)
+
+
+def _parse_llm_recheck_response(response: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    content = _extract_chat_completion_content(response)
+    payload = _parse_json_object_from_text(content)
+    decisions: dict[str, dict[str, Any]] = {}
+    for item in payload.get("decisions") or []:
+        if not isinstance(item, Mapping):
+            continue
+        candidate_id = _normalize_space(str(item.get("candidate_id") or ""))
+        if not candidate_id:
+            continue
+        decisions[candidate_id] = {
+            "keep": bool(item.get("keep")),
+            "reason": _normalize_space(str(item.get("reason") or "")),
+            "confidence": _normalize_confidence(item.get("confidence")),
+        }
+    return decisions
+
+
+def _extract_chat_completion_content(response: Mapping[str, Any]) -> str:
+    choices = response.get("choices") or []
+    if not choices:
+        raise ValueError("missing choices")
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, Mapping):
+                text = item.get("text")
+                if text:
+                    parts.append(str(text))
+        if parts:
+            return "\n".join(parts)
+    raise ValueError("missing message content")
+
+
+def _parse_json_object_from_text(text: str) -> dict[str, Any]:
+    normalized = _normalize_space(text)
+    if not normalized:
+        raise ValueError("empty llm response")
+    try:
+        payload = json.loads(normalized)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            raise
+        payload = json.loads(match.group(0))
+    if not isinstance(payload, dict):
+        raise ValueError("llm response is not a json object")
+    return payload
 
 
 def _find_technical_points_header(rows: list[list[str]]) -> int | None:

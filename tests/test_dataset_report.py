@@ -10,8 +10,8 @@ from pathlib import Path
 
 from docx import Document
 
-from sparkflow.__main__ import main
-from sparkflow.reporting.dataset_report import write_dataset_audit_report
+from backend.__main__ import main
+from backend.reporting.dataset_report import write_dataset_audit_report
 
 
 class DatasetReportTests(unittest.TestCase):

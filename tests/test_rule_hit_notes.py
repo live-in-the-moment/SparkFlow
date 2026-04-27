@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sparkflow.contracts import AuditReport, Issue, ObjectRef, Severity
-from sparkflow.core import _build_rule_hit_notes, _finalize_issues, _infer_drawing_type
-from sparkflow.model.types import DrawingSelection
-from sparkflow.reporting.docx_report import write_docx_report
-from sparkflow.reporting.markdown import render_markdown_report
+from backend.contracts import AuditReport, Issue, ObjectRef, Severity
+from backend.core import _build_rule_hit_notes, _finalize_issues, _infer_drawing_type
+from backend.model.types import DrawingSelection
+from backend.reporting.docx_report import write_docx_report
+from backend.reporting.markdown import render_markdown_report
 
 
 class RuleHitNotesTests(unittest.TestCase):

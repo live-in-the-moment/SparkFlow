@@ -10,8 +10,8 @@ from pathlib import Path
 
 from docx import Document
 
-from sparkflow.__main__ import main
-from sparkflow.reporting.rectification_checklist import write_rectification_checklist
+from backend.__main__ import main
+from backend.reporting.rectification_checklist import write_rectification_checklist
 
 
 class RectificationChecklistTests(unittest.TestCase):

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from sparkflow.model.types import Device, ElectricalComponent, ElectricalGraph, ElectricalNet, ElectricalTerminal, Point2D, SystemModel
-from sparkflow.rules.rules import DeviceLabelPatternInvalidRule, DeviceNeedsNearbyTextRule, DuplicateDeviceLabelRule
-from sparkflow.rules.topology_rules import (
+from backend.model.types import Device, ElectricalComponent, ElectricalGraph, ElectricalNet, ElectricalTerminal, Point2D, SystemModel
+from backend.rules.rules import DeviceLabelPatternInvalidRule, DeviceNeedsNearbyTextRule, DuplicateDeviceLabelRule
+from backend.rules.topology_rules import (
     ElectricalBranchBoxInsufficientBranchesRule,
     ElectricalBusbarUnderconnectedRule,
     ElectricalIncomingTransformerBusbarDirectionRule,

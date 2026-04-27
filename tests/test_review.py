@@ -12,10 +12,16 @@ from xml.sax.saxutils import escape as xml_escape
 
 import ezdxf
 
-from sparkflow.__main__ import main
-from sparkflow.cad.parse import CadParseOptions
-from sparkflow.review import _load_technical_point_rules, load_review_rules, review_audit
-from sparkflow.review_workflow import build_rectification_checklist, review_pipeline, split_review_pages
+from backend.__main__ import main
+from backend.cad.parse import CadParseOptions
+from backend.review import (
+    _load_technical_point_rules,
+    _load_technical_point_rules_with_meta,
+    _resolve_technical_point_llm_recheck_config,
+    load_review_rules,
+    review_audit,
+)
+from backend.review_workflow import build_rectification_checklist, review_pipeline, split_review_pages
 
 
 class ReviewFlowTests(unittest.TestCase):
@@ -126,6 +132,187 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertEqual(tech_rules[1]["source_text"], "图08 10kV线路走向示意图（改造后）补充标注新建台架变新建电杆规格。")
             self.assertEqual(tech_rules[1]["scope"], "drawing")
 
+    def test_load_review_rules_filters_attachment_inventory_technical_points(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            review_dir = Path(td) / "评审意见"
+            tech_dir = review_dir / "评审技术要点"
+            tech_dir.mkdir(parents=True, exist_ok=True)
+
+            major_row = [""] * 15
+            major_row[0] = "4"
+            major_row[1] = "附城所10kV朗溪线石龙台区改建工程"
+            major_row[2] = "035352DP24110168"
+            major_row[6] = "1、图08 10kV线路走向示意图（改造后）应补充杆型标注。"
+            major_row[7] = "1、已修改。"
+            major_row[10] = "已执行"
+            _write_xlsx_sheet(
+                review_dir / "附件2：设计和造价主要问题统计表.xlsx",
+                "表5 设计和造价主要问题统计表",
+                [["序号", "工程名称", "工程编码/项目数"], major_row],
+            )
+
+            tech_rows = [
+                ["评审类别", "评审项", "评审要点", "本项目是否适用", "扣分标准"],
+                ["形式审查", "齐备性(10分）", "1、附件1 XXX工程设计说明书", "是", "扣分"],
+                ["", "", "2、附件3 主要设备材料清册-xxx工程", "是", "扣分"],
+                ["总体情况", "总体部分（20分）", "1、是否执行现行国家、行业规范规程的强制性条文", "是", "扣分"],
+                ["技术方案", "台区（10分）", "图08 10kV线路走向示意图（改造后）补充标注新建台架变新建电杆规格。", "是", "扣分"],
+            ]
+            _write_xlsx_sheet(
+                tech_dir / "配网工程设计评审技术要点（附城所10kV朗溪线石龙台区改建工程）.xlsx",
+                "技术要点",
+                tech_rows,
+            )
+
+            rules_doc = load_review_rules(review_dir, project_code="035352DP24110168")
+
+            tech_rules = [item for item in rules_doc["review_rules"] if item["source_type"] == "technical_points"]
+            self.assertEqual(len(tech_rules), 1)
+            self.assertEqual(tech_rules[0]["source_text"], "图08 10kV线路走向示意图（改造后）补充标注新建台架变新建电杆规格。")
+
+            extraction_meta = rules_doc["technical_points_extraction"]
+            self.assertEqual(extraction_meta["emitted_rule_count"], 1)
+            self.assertEqual(extraction_meta["filtered_candidate_count"], 3)
+            self.assertEqual(extraction_meta["filtered_by_reason"]["attachment_inventory"], 2)
+            self.assertEqual(extraction_meta["filtered_by_reason"]["low_signal_checklist"], 1)
+
+    def test_load_review_rules_filters_broad_generic_technical_points(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            review_dir = Path(td) / "评审意见"
+            tech_dir = review_dir / "评审技术要点"
+            tech_dir.mkdir(parents=True, exist_ok=True)
+
+            project_name = "附城所10kV朗溪线石龙台区改建工程"
+            project_code = "035352DP24110168"
+            major_row = [""] * 15
+            major_row[0] = "4"
+            major_row[1] = project_name
+            major_row[2] = project_code
+            major_row[6] = "1、图08 10kV线路走向示意图（改造后）应补充杆型标注。"
+            major_row[7] = "1、已修改。"
+            major_row[10] = "已执行"
+            _write_xlsx_sheet(
+                review_dir / "附件2：设计和造价主要问题统计表.xlsx",
+                "表5 设计和造价主要问题统计表",
+                [["序号", "工程名称", "工程编码/项目数"], major_row],
+            )
+
+            _write_xlsx_sheet(
+                tech_dir / f"配网工程设计评审技术要点（{project_name}）.xlsx",
+                "技术要点",
+                [
+                    ["评审类别", "评审项", "评审要点", "本项目是否适用", "扣分标准"],
+                    ["总体情况", "总体部分（20分）", "2、设计文件是否完全执行可研批复文件的要求", "是", "扣分"],
+                    [
+                        "技术方案",
+                        "线路（20分）",
+                        "1、线路路径是否最优，线路耐张段、分段开关设置是否合理，交叉跨越方案是否满足要求，线路平断面图表述信息是否齐全",
+                        "是",
+                        "扣分",
+                    ],
+                    [
+                        "总体原则",
+                        "技经（20分）",
+                        "3、总体原则：预算文件是否完整规范，编制依据是否合法有效，深度是否达到要求，项目及费用性质划分是否符合要求",
+                        "是",
+                        "扣分",
+                    ],
+                    ["总体情况", "总体部分（20分）", "设计说明书1.2建设规模智能网关数量校核。", "是", "扣分"],
+                    ["技术方案", "台区（10分）", "图08 10kV线路走向示意图（改造后）补充标注新建台架变新建电杆规格。", "是", "扣分"],
+                ],
+            )
+
+            rules_doc = load_review_rules(review_dir, project_code=project_code)
+
+            tech_rules = [item for item in rules_doc["review_rules"] if item["source_type"] == "technical_points"]
+            self.assertEqual(len(tech_rules), 2)
+            self.assertEqual(tech_rules[0]["source_text"], "设计说明书1.2建设规模智能网关数量校核。")
+            self.assertEqual(tech_rules[1]["source_text"], "图08 10kV线路走向示意图（改造后）补充标注新建台架变新建电杆规格。")
+
+            extraction_meta = rules_doc["technical_points_extraction"]
+            self.assertEqual(extraction_meta["emitted_rule_count"], 2)
+            self.assertEqual(extraction_meta["filtered_candidate_count"], 3)
+            self.assertEqual(extraction_meta["filtered_by_reason"]["manual_document_general"], 2)
+            self.assertEqual(extraction_meta["filtered_by_reason"]["broad_questionnaire"], 1)
+
+    def test_technical_point_llm_recheck_config_defaults_disabled(self) -> None:
+        config = _resolve_technical_point_llm_recheck_config({})
+
+        self.assertFalse(config.requested)
+        self.assertFalse(config.enabled)
+        self.assertEqual(config.disabled_reason, "disabled_by_default")
+
+    def test_load_technical_point_rules_can_readd_boundary_samples_via_llm_recheck(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_name = "附城所10kV朗溪线石龙台区改建工程"
+            workbook_path = root / f"配网工程设计评审技术要点（{project_name}）.xlsx"
+            _write_xlsx_sheet(
+                workbook_path,
+                "技术要点",
+                [
+                    ["评审类别", "评审项", "评审要点", "本项目是否适用", "扣分标准"],
+                    [
+                        "技术方案",
+                        "线路（20分）",
+                        "1、线路路径是否最优，线路耐张段、分段开关设置是否合理，交叉跨越方案是否满足要求，线路平断面图表述信息是否齐全",
+                        "是",
+                        "扣分",
+                    ],
+                ],
+            )
+            config = _resolve_technical_point_llm_recheck_config(
+                {
+                    "SPARKFLOW_TECHPOINT_LLM_RECHECK_ENABLED": "true",
+                    "SPARKFLOW_TECHPOINT_LLM_RECHECK_BASE_URL": "https://gpu.ngsk.tech:7001/v1",
+                    "SPARKFLOW_TECHPOINT_LLM_RECHECK_MODEL": "qwen3-30b-a3b-instruct-2507",
+                    "SPARKFLOW_TECHPOINT_LLM_RECHECK_API_KEY": "test-key",
+                }
+            )
+            candidate_id = f"tp_{workbook_path.stem}_0_2_1"
+
+            with patch(
+                "backend.review._call_openai_compatible_chat_completion",
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decisions": [
+                                            {
+                                                "candidate_id": candidate_id,
+                                                "keep": True,
+                                                "reason": "保留为图纸审查边界规则",
+                                                "confidence": 0.91,
+                                            }
+                                        ]
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            ):
+                rules, meta = _load_technical_point_rules_with_meta(
+                    (workbook_path,),
+                    project_name=project_name,
+                    project_code="",
+                    llm_recheck_config=config,
+                )
+
+            self.assertEqual(len(rules), 1)
+            self.assertEqual(
+                rules[0]["source_text"],
+                "1、线路路径是否最优，线路耐张段、分段开关设置是否合理，交叉跨越方案是否满足要求，线路平断面图表述信息是否齐全",
+            )
+            self.assertTrue(rules[0]["llm_recheck"]["accepted"])
+            self.assertEqual(meta["filtered_candidate_count"], 0)
+            self.assertEqual(meta["llm_recheck"]["requested_count"], 1)
+            self.assertEqual(meta["llm_recheck"]["accepted_count"], 1)
+            self.assertEqual(meta["llm_recheck"]["rejected_count"], 0)
+
     def test_load_review_rules_accepts_technical_points_subdir_input(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             review_dir = Path(td) / "评审意见"
@@ -196,7 +383,7 @@ class ReviewFlowTests(unittest.TestCase):
                     )
                 ]
 
-            with patch("sparkflow.review._read_excel_sheets", side_effect=fake_read_excel_sheets):
+            with patch("backend.review._read_excel_sheets", side_effect=fake_read_excel_sheets):
                 rules = _load_technical_point_rules(
                     (matching, other_1, other_2),
                     project_name=project_name,
@@ -215,7 +402,7 @@ class ReviewFlowTests(unittest.TestCase):
             project_name = "加益供电所10kV合江线新增配变及黄沙公用台变改造工程"
 
             with patch(
-                "sparkflow.review._read_excel_sheets",
+                "backend.review._read_excel_sheets",
                 return_value=[
                     (
                         "技术要点",

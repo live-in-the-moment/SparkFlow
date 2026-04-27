@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = ["ezdxf>=1.4.3", "python-docx>=1.1.0"]
 
 [project.scripts]
-sparkflow = "sparkflow.__main__:main"
+sparkflow = "backend.__main__:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

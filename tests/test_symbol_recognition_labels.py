@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 
-from sparkflow.model.build_options import DeviceTemplate, ModelBuildOptions, WireFilter
-from sparkflow.model.builder import build_system_model
-from sparkflow.cad.entities import CadEntity
+from backend.model.build_options import DeviceTemplate, ModelBuildOptions, WireFilter
+from backend.model.builder import build_system_model
+from backend.cad.entities import CadEntity
 
 
 class SymbolRecognitionLabelTests(unittest.TestCase):

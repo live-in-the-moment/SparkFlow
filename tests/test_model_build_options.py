@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from sparkflow.model.build_options import (
+from backend.model.build_options import (
     builtin_device_templates,
     default_model_build_options,
     default_terminal_templates,
@@ -140,7 +140,7 @@ class ModelBuildOptionsTests(unittest.TestCase):
         )
         expected = model_build_options_from_dict(catalog_payload)
 
-        with patch("sparkflow.model.build_options.load_catalog_model_build_options", return_value=None):
+        with patch("backend.model.build_options.load_catalog_model_build_options", return_value=None):
             fallback_devices = builtin_device_templates()
             fallback_terminals = default_terminal_templates()
 

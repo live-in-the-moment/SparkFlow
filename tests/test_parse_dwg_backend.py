@@ -1,12 +1,12 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sparkflow.cad.entities import ParsedCad
-from sparkflow.cad.parse import CadParseOptions, parse_cad
+from backend.cad.entities import ParsedCad
+from backend.cad.parse import CadParseOptions, parse_cad
 
 
 class ParseDwgBackendTests(unittest.TestCase):
@@ -18,8 +18,8 @@ class ParseDwgBackendTests(unittest.TestCase):
             dwg.write_bytes(b'dwg')
             dxf.write_text('0\nEOF\n', encoding='utf-8')
 
-            with patch('sparkflow.cad.parse.convert_dwg_to_dxf', return_value=dxf) as convert_mock:
-                with patch('sparkflow.cad.dxf_ezdxf.parse_ezdxf_dxf', return_value=ParsedCad('dxf_ezdxf_v1', (), {})) as ez_mock:
+            with patch('backend.cad.parse.convert_dwg_to_dxf', return_value=dxf) as convert_mock:
+                with patch('backend.cad.dxf_ezdxf.parse_ezdxf_dxf', return_value=ParsedCad('dxf_ezdxf_v1', (), {})) as ez_mock:
                     parsed = parse_cad(
                         dwg,
                         options=CadParseOptions(

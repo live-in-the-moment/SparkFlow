@@ -64,12 +64,20 @@ docs/**/*.pdf
 docs/**/*.dwg
 docs/**/*.dxf
 docs/**/*.docx
+docs/**/*.doc
 docs/**/*.pptx
 docs/**/*.xls
 docs/**/*.xlsx
 docs/**/*.jpg
 docs/**/*.jpeg
 docs/**/*.png
+docs/**/*.bak
+docs/**/*.dwl
+docs/**/*.dwl2
+docs/**/*.BDY3
+docs/**/*.bdY3
+docs/**/*.bdy3
+docs/**/*.tsv
 
 # Codex local configuration
 .codex/

@@ -9,10 +9,10 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-from sparkflow.core import audit_file
-from sparkflow.rules.diffing import build_ruleset_diff
-from sparkflow.rules.knowledgebase import load_ruleset_dir
-from sparkflow.rules.registry import list_rule_ids
+from backend.core import audit_file
+from backend.rules.diffing import build_ruleset_diff
+from backend.rules.knowledgebase import load_ruleset_dir
+from backend.rules.registry import list_rule_ids
 
 
 class RulesetLoadingTests(unittest.TestCase):

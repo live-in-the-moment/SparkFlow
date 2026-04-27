@@ -8,8 +8,8 @@ from unittest.mock import patch
 from docx import Document
 from openpyxl import Workbook
 
-from sparkflow.model.types import ProjectDocumentContext
-from sparkflow.project_docs import build_project_document_context, project_document_mentions, project_document_note_exists
+from backend.model.types import ProjectDocumentContext
+from backend.project_docs import build_project_document_context, project_document_mentions, project_document_note_exists
 
 
 class ProjectDocumentContextTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class ProjectDocumentContextTests(unittest.TestCase):
             tower_xls.write_bytes(b"stub")
 
             with patch(
-                "sparkflow.project_docs._read_xls_rows_via_excel",
+                "backend.project_docs._read_xls_rows_via_excel",
                 return_value=[
                     ["名称", "数量", "单位"],
                     ["电杆", "3", "根"],
