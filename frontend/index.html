@@ -425,24 +425,112 @@
       </article>
     </section>
 
-    <section id="settings" class="section">
-      <div class="grid grid-2">
-        <div class="card">
-          <div class="card-title"><h3>模型与知识库配置</h3><span>演示环境</span></div>
-          <div class="grid grid-2">
-            <label>模型网关<select><option>私有模型网关</option><option>本地大模型</option></select></label>
-            <label>知识库版本<select><option>企业规范库 v0.9</option><option>试点规范库 v0.8</option></select></label>
-            <label>检索 Top-K<input type="number" value="5"/></label>
-            <label>相似度阈值<input type="number" value="0.75" step="0.01"/></label>
+    <section id="settings" class="section settings-page">
+      <div class="page-section-heading">
+        <h2>配置中心</h2>
+        <p>系统参数、模型配置、Agent行为规则管理</p>
+      </div>
+
+      <article class="settings-panel">
+        <h3><span aria-hidden="true">🧠</span> 大模型配置</h3>
+        <div class="settings-form-grid">
+          <label class="config-field">
+            <span>主推理模型</span>
+            <select aria-label="主推理模型">
+              <option>Qwen-72B（私有化部署）</option>
+              <option>DeepSeek-R1（私有化部署）</option>
+              <option>GLM-4.5（专有云）</option>
+            </select>
+          </label>
+          <label class="config-field">
+            <span>多模态模型</span>
+            <select aria-label="多模态模型">
+              <option>Qwen-VL-Max</option>
+              <option>GPT-4o Vision</option>
+              <option>InternVL3</option>
+            </select>
+          </label>
+          <label class="config-field temperature-field">
+            <span>Temperature</span>
+            <input type="range" min="0" max="1" step="0.1" value="0.3" aria-label="Temperature" />
+            <div class="range-scale" aria-hidden="true">
+              <span>严谨</span>
+              <span>0.3</span>
+              <span>创造</span>
+            </div>
+          </label>
+          <label class="config-field">
+            <span>Max Tokens</span>
+            <input type="number" value="4096" min="512" max="32768" step="512" aria-label="Max Tokens" />
+          </label>
+        </div>
+      </article>
+
+      <article class="settings-panel">
+        <h3><span aria-hidden="true">📦</span> 向量数据库配置</h3>
+        <div class="settings-form-grid">
+          <label class="config-field">
+            <span>向量数据库</span>
+            <select aria-label="向量数据库">
+              <option>OpenSearch Vector</option>
+              <option>Milvus</option>
+              <option>pgvector</option>
+            </select>
+          </label>
+          <label class="config-field">
+            <span>Embedding模型</span>
+            <select aria-label="Embedding模型">
+              <option>BGE-M3（本地）</option>
+              <option>text-embedding-v3</option>
+              <option>gte-Qwen2</option>
+            </select>
+          </label>
+          <label class="config-field">
+            <span>Top-K检索数量</span>
+            <input type="number" value="5" min="1" max="20" aria-label="Top-K检索数量" />
+          </label>
+          <label class="config-field">
+            <span>相似度阈值</span>
+            <input type="number" value="0.75" min="0" max="1" step="0.01" aria-label="相似度阈值" />
+          </label>
+        </div>
+      </article>
+
+      <article class="settings-panel agent-rule-panel">
+        <h3><span aria-hidden="true">⚙️</span> Agent行为规则</h3>
+        <div class="agent-rule-list">
+          <div class="agent-rule-item">
+            <div>
+              <h4>重大缺陷自动中断</h4>
+              <p>当Agent发现严重缺陷时，自动触发人工介入节点</p>
+            </div>
+            <label class="switch" aria-label="重大缺陷自动中断">
+              <input type="checkbox" checked />
+              <span></span>
+            </label>
+          </div>
+          <div class="agent-rule-item">
+            <div>
+              <h4>跨Agent冲突仲裁</h4>
+              <p>主审Agent自动检测并消解专业间意见冲突</p>
+            </div>
+            <label class="switch" aria-label="跨Agent冲突仲裁">
+              <input type="checkbox" checked />
+              <span></span>
+            </label>
+          </div>
+          <div class="agent-rule-item">
+            <div>
+              <h4>造价异常自动预警</h4>
+              <p>偏离历史均值±20%时自动标红并推送通知</p>
+            </div>
+            <label class="switch" aria-label="造价异常自动预警">
+              <input type="checkbox" checked />
+              <span></span>
+            </label>
           </div>
         </div>
-        <div class="card">
-          <div class="card-title"><h3>Agent行为规则</h3><span>人工复核优先</span></div>
-          <div class="project"><div><h4>重大缺陷自动中断</h4><p>发现严重缺陷时进入专业负责人复核节点。</p></div><span class="pill green">启用</span></div>
-          <div class="project"><div><h4>跨Agent冲突仲裁</h4><p>主审Agent合并、去重并标注冲突来源。</p></div><span class="pill green">启用</span></div>
-          <div class="project"><div><h4>造价异常自动预警</h4><p>偏离历史均值阈值后推送待复核任务。</p></div><span class="pill green">启用</span></div>
-        </div>
-      </div>
+      </article>
     </section>
   </main>
 </div>

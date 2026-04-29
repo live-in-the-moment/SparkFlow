@@ -55,7 +55,7 @@ const sections: Record<SectionId, readonly [string, string]> = {
   report: ['评审报告', '输出可追溯、可复核、可闭环的结构化评审意见，而不是单纯的自然语言总结。'],
   knowledge: ['规范知识库', 'RAG增强检索，向量语义搜索 + 关键词过滤，条文溯源'],
   cost: ['造价分析', '工程量联动校验，历史造价对比，孤立森林异常检测'],
-  settings: ['配置中心', '集中管理模型网关、知识库版本、检索参数和多智能体运行规则。'],
+  settings: ['配置中心', '系统参数、模型配置、Agent行为规则管理'],
 };
 
 const agents: Agent[] = [

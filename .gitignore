@@ -90,3 +90,7 @@ docs/**/*.tsv
 
 # Claude Code local config
 CLAUDE.local.md
+
+catalog/
+rulesets/
+tmp/

@@ -2393,3 +2393,206 @@ body {
       }
     }
 
+    .settings-page {
+      color: #d8ecff;
+    }
+    .settings-panel {
+      margin-bottom: 20px;
+      padding: 28px 26px 30px;
+      border: 1px solid rgba(113, 145, 180, .22);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(30, 48, 72, .96), rgba(18, 33, 51, .96));
+      box-shadow: var(--shadow);
+    }
+    .settings-panel h3 {
+      margin: 0 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #ffffff;
+      font-size: 22px;
+      line-height: 1.25;
+      font-weight: 900;
+    }
+    .settings-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px 30px;
+    }
+    .config-field {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+      color: #7899bd;
+      font-size: 15px;
+      font-weight: 900;
+    }
+    .config-field > span {
+      color: #7899bd;
+    }
+    .config-field input,
+    .config-field select {
+      height: 48px;
+      border: 0;
+      border-radius: 9px;
+      background: #0b1624;
+      color: #ffffff;
+      font-size: 18px;
+      font-weight: 500;
+      box-shadow: inset 0 0 0 1px rgba(113, 145, 180, .05);
+    }
+    .config-field input:focus,
+    .config-field select:focus {
+      border: 0;
+      box-shadow: 0 0 0 3px rgba(39, 216, 255, .16), inset 0 0 0 1px rgba(39, 216, 255, .32);
+    }
+    .temperature-field input[type="range"] {
+      height: 48px;
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      cursor: pointer;
+      accent-color: #2fc7d5;
+    }
+    .temperature-field input[type="range"]:focus {
+      box-shadow: none;
+    }
+    .temperature-field input[type="range"]::-webkit-slider-runnable-track {
+      height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .28);
+      background: linear-gradient(90deg, #37c9d7 0%, #37c9d7 31%, rgba(128, 122, 103, .82) 31%, rgba(128, 122, 103, .82) 100%);
+    }
+    .temperature-field input[type="range"]::-webkit-slider-thumb {
+      width: 18px;
+      height: 18px;
+      margin-top: -5px;
+      border: 0;
+      border-radius: 50%;
+      background: #2fc7d5;
+      -webkit-appearance: none;
+      box-shadow: 0 0 0 3px rgba(47, 199, 213, .14);
+    }
+    .temperature-field input[type="range"]::-moz-range-track {
+      height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .28);
+      background: rgba(128, 122, 103, .82);
+    }
+    .temperature-field input[type="range"]::-moz-range-progress {
+      height: 10px;
+      border-radius: 999px;
+      background: #37c9d7;
+    }
+    .range-scale {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      color: #88a9cc;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .range-scale span:nth-child(2) {
+      text-align: center;
+    }
+    .range-scale span:last-child {
+      text-align: right;
+    }
+    .agent-rule-panel {
+      padding-bottom: 28px;
+    }
+    .agent-rule-list {
+      display: grid;
+      gap: 10px;
+    }
+    .agent-rule-item {
+      min-height: 68px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: center;
+      padding: 14px 16px;
+      border-radius: 9px;
+      background: #0b1624;
+      color: #ffffff;
+    }
+    .agent-rule-item h4 {
+      margin: 0 0 4px;
+      color: #ffffff;
+      font-size: 17px;
+      line-height: 1.3;
+      font-weight: 900;
+    }
+    .agent-rule-item p {
+      margin: 0;
+      color: #7899bd;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .switch {
+      width: 56px;
+      height: 28px;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+    }
+    .switch input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .switch span {
+      width: 56px;
+      height: 28px;
+      position: relative;
+      border-radius: 999px;
+      background: rgba(113, 145, 180, .28);
+      transition: background .18s ease;
+    }
+    .switch span::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .30);
+      transition: transform .18s ease;
+    }
+    .switch input:checked + span {
+      background: #20c997;
+    }
+    .switch input:checked + span::after {
+      transform: translateX(26px);
+    }
+    .switch input:focus-visible + span {
+      box-shadow: 0 0 0 3px rgba(39, 216, 255, .18);
+    }
+
+    @media (max-width: 900px) {
+      .settings-form-grid {
+        grid-template-columns: 1fr;
+      }
+      .settings-panel {
+        padding: 22px 18px;
+      }
+      .config-field input,
+      .config-field select {
+        font-size: 16px;
+      }
+      .agent-rule-item {
+        align-items: start;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .agent-rule-item {
+        grid-template-columns: 1fr;
+      }
+      .switch {
+        justify-self: end;
+      }
+    }
+
